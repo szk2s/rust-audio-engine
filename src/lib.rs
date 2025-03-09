@@ -1,20 +1,14 @@
 use nih_plug::prelude::*;
-use std::f32::consts::PI;
 use std::sync::Arc;
+use std::usize;
 
 // AudioGraphNodeトレイトの定義
 /// オーディオグラフのノードのインターフェース
 pub trait AudioGraphNode {
-    /// ノードの処理を行う
-    ///
-    /// # 引数
-    /// * `input` - 入力バッファ（オプション）
-    /// * `output` - 出力バッファ
-    /// * `num_samples` - 処理するサンプル数
-    /// * `sample_rate` - サンプリングレート
-    fn process(&mut self, buffer: &mut [f32], num_samples: usize, sample_rate: f32);
+    fn prepare(&mut self, sample_rate: f32, max_num_samples: usize);
 
-    /// ノードのリセット
+    fn process(&mut self, buffer: &mut [&mut [f32]]);
+
     fn reset(&mut self);
 }
 
@@ -39,14 +33,9 @@ impl SineGenerator {
         }
     }
 
-    /// 周波数を設定
+    /// サイン波の周波数を設定
     pub fn set_frequency(&mut self, frequency: f32) {
         self.frequency = frequency;
-    }
-
-    /// サンプルレートを設定
-    pub fn set_sample_rate(&mut self, sample_rate: f32) {
-        self.sample_rate = sample_rate;
     }
 
     /// サイン波を生成する
@@ -68,13 +57,19 @@ impl SineGenerator {
 }
 
 impl AudioGraphNode for SineGenerator {
-    fn process(&mut self, buffer: &mut [f32], num_samples: usize, sample_rate: f32) {
-        // サンプルレートを更新
+    fn prepare(&mut self, sample_rate: f32, _max_num_samples: usize) {
         self.sample_rate = sample_rate;
+    }
 
-        // サイン波を生成
+    fn process(&mut self, buffer: &mut [&mut [f32]]) {
+        let num_channels = buffer.len();
+        let num_samples = buffer[0].len();
         for i in 0..num_samples {
-            buffer[i] = self.calculate_sine();
+            let val = self.calculate_sine();
+            // サイン波を生成
+            for ch in 0..num_channels {
+                buffer[ch][i] = val;
+            }
         }
     }
 
@@ -103,11 +98,16 @@ impl GainProcessor {
 }
 
 impl AudioGraphNode for GainProcessor {
-    fn process(&mut self, buffer: &mut [f32], num_samples: usize, sample_rate: f32) {
+    fn prepare(&mut self, _sample_rate: f32, _max_num_samples: usize) {
+        // 何もしない。
+    }
+
+    fn process(&mut self, buffer: &mut [&mut [f32]]) {
         // 入力があれば、ゲインを適用して出力に書き込む
-        for i in 0..num_samples {
-            let tmp = buffer[i] * self.gain;
-            buffer[i] = tmp;
+        for ch in 0..buffer.len() {
+            for i in 0..buffer[ch].len() {
+                buffer[ch][i] = buffer[ch][i] * self.gain;
+            }
         }
     }
 
@@ -153,7 +153,7 @@ impl Default for RustAudioEngineParams {
                 util::db_to_gain(0.0),
                 FloatRange::Skewed {
                     min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
+                    max: util::db_to_gain(12.0),
                     factor: FloatRange::gain_skew_factor(-30.0, 30.0),
                 },
             )
@@ -166,8 +166,8 @@ impl Default for RustAudioEngineParams {
                 "周波数",
                 440.0,
                 FloatRange::Skewed {
-                    min: 20.0,
-                    max: 20000.0,
+                    min: 80.0,
+                    max: 2000.0,
                     factor: FloatRange::skew_factor(-2.0),
                 },
             )
@@ -216,6 +216,10 @@ impl Plugin for RustAudioEngine {
         // ノードをリセット
         self.reset();
 
+        let sample_rate = buffer_config.sample_rate;
+        self.sine_generator
+            .prepare(sample_rate, buffer_config.max_buffer_size as usize);
+
         true
     }
 
@@ -229,15 +233,8 @@ impl Plugin for RustAudioEngine {
         &mut self,
         buffer: &mut Buffer,
         _aux: &mut AuxiliaryBuffers,
-        context: &mut impl ProcessContext<Self>,
+        _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // バッファ内のサンプル数とサンプルレートを取得
-        let num_samples = buffer.samples();
-        let sample_rate = context.transport().sample_rate;
-
-        // 出力チャンネル数を取得
-        let num_channels = buffer.channels();
-
         // パラメーターからサイン波ジェネレーターの周波数を更新
         let frequency = self.params.frequency.smoothed.next();
         self.sine_generator.set_frequency(frequency);
@@ -246,19 +243,16 @@ impl Plugin for RustAudioEngine {
         let gain = self.params.gain.smoothed.next();
         self.gain_processor.set_gain(gain);
 
-        // 0 チャンネルだけ処理を行う
-        let channel_idx = 0;
-
         // 現在のチャンネルの &mut [f32] バッファを取得
-        let channel_buffer = &mut buffer.as_slice()[channel_idx];
+        let raw_buffer = buffer.as_slice();
 
-        (*channel_buffer).fill(0.0);
+        for channel_buffer in raw_buffer.iter_mut() {
+            (*channel_buffer).fill(0.0);
+        }
 
         // プロセッサーチェーンを処理（サイン波生成 → ゲイン処理）
-        self.sine_generator
-            .process(*channel_buffer, num_samples, sample_rate);
-        self.gain_processor
-            .process(channel_buffer, num_samples, sample_rate);
+        self.sine_generator.process(raw_buffer);
+        self.gain_processor.process(raw_buffer);
 
         ProcessStatus::Normal
     }
@@ -288,29 +282,33 @@ mod tests {
     #[test]
     fn test_sine_generator() {
         let mut generator = SineGenerator::new(1.0); // 1Hz
-        let mut output = vec![0.0; 4];
+        let mut buffer: Vec<f32> = vec![0.0; 4];
+        let mut slices: Vec<&mut [f32]> = vec![buffer.as_mut_slice()];
 
-        generator.process(&mut output, 4, 4.0); // サンプルレート4Hzで1秒分を生成
+        // サンプルレート4Hzで1秒分を生成
+        generator.prepare(4.0, 4);
+        generator.process(&mut slices);
 
         // 期待される値: 0, 1, 0, -1（1Hzのサイン波、サンプルレート4Hzの場合）
-        assert!(output[0].abs() < 1e-6); // sin(0) = 0
-        assert!((output[1] - 1.0).abs() < 1e-6); // sin(π/2) = 1
-        assert!(output[2].abs() < 1e-6); // sin(π) = 0
-        assert!((output[3] + 1.0).abs() < 1e-6); // sin(3π/2) = -1
+        assert!(buffer[0].abs() < 1e-6); // sin(0) = 0
+        assert!((buffer[1] - 1.0).abs() < 1e-6); // sin(π/2) = 1
+        assert!(buffer[2].abs() < 1e-6); // sin(π) = 0
+        assert!((buffer[3] + 1.0).abs() < 1e-6); // sin(3π/2) = -1
     }
 
     /// GainProcessorのテスト
     #[test]
     fn test_gain_processor() {
         let mut processor = GainProcessor::new(2.0);
-        let mut buffer = vec![0.5, -0.5, 0.25, -0.25];
+        let mut channel_buffer: Vec<f32> = vec![0.5, -0.5, 0.25, -0.25];
+        let mut slices: Vec<&mut [f32]> = vec![channel_buffer.as_mut_slice()];
 
-        processor.process(&mut buffer, 4, 44100.0);
+        processor.process(&mut slices);
 
         // 期待される値: 入力 * 2.0
-        assert_eq!(buffer[0], 1.0);
-        assert_eq!(buffer[1], -1.0);
-        assert_eq!(buffer[2], 0.5);
-        assert_eq!(buffer[3], -0.5);
+        assert_eq!(channel_buffer[0], 1.0);
+        assert_eq!(channel_buffer[1], -1.0);
+        assert_eq!(channel_buffer[2], 0.5);
+        assert_eq!(channel_buffer[3], -0.5);
     }
 }
