@@ -146,3 +146,28 @@ impl ClapPlugin for RustAudioEngine {
 }
 
 nih_export_clap!(RustAudioEngine);
+
+#[cfg(test)]
+mod tests {
+    /// 基本的なテスト機能を確認します
+    #[test]
+    fn test_true_is_true() {
+        assert!(true, "trueはtrueです");
+    }
+
+    /// 等価性のテストを確認します
+    #[test]
+    fn test_equality() {
+        let a = 42;
+        let b = 42;
+        assert_eq!(a, b, "aとbは等しくなければなりません");
+    }
+
+    /// 不等価性のテストを確認します
+    #[test]
+    fn test_inequality() {
+        let a = 42;
+        let b = 24;
+        assert_ne!(a, b, "aとbは等しくあってはなりません");
+    }
+}
