@@ -80,7 +80,6 @@ impl Plugin for RustAudioEngine {
         names: PortNames::const_default(),
     }];
 
-
     const MIDI_INPUT: MidiConfig = MidiConfig::None;
     const MIDI_OUTPUT: MidiConfig = MidiConfig::None;
 
@@ -137,7 +136,8 @@ impl Plugin for RustAudioEngine {
 
 impl ClapPlugin for RustAudioEngine {
     const CLAP_ID: &'static str = "com.your-domain.rust-audio-engine";
-    const CLAP_DESCRIPTION: Option<&'static str> = Some("Rust implementation of NovoNotes AudioEngine API (WIP)");
+    const CLAP_DESCRIPTION: Option<&'static str> =
+        Some("Rust implementation of NovoNotes AudioEngine API (WIP)");
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
 
@@ -145,13 +145,4 @@ impl ClapPlugin for RustAudioEngine {
     const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Stereo];
 }
 
-impl Vst3Plugin for RustAudioEngine {
-    const VST3_CLASS_ID: [u8; 16] = *b"Exactly16Chars!!";
-
-    // And also don't forget to change these categories
-    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
-        &[Vst3SubCategory::Fx, Vst3SubCategory::Dynamics];
-}
-
 nih_export_clap!(RustAudioEngine);
-nih_export_vst3!(RustAudioEngine);

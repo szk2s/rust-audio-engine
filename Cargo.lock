@@ -364,7 +364,6 @@ dependencies = [
  "raw-window-handle",
  "serde",
  "serde_json",
- "vst3-sys",
  "widestring",
  "windows",
 ]
@@ -732,43 +731,6 @@ name = "unicode-ident"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a5f39404a5da50712a4c1eecf25e90dd62b613502b7e925fd4e4d19b5c96512"
-
-[[package]]
-name = "vst3-com"
-version = "0.1.0"
-source = "git+https://github.com/robbert-vdh/vst3-sys.git?branch=fix%2Fdrop-box-from-raw#b3ff4d775940f5b476b9d1cca02a90e07e1922a2"
-dependencies = [
- "vst3-com-macros",
-]
-
-[[package]]
-name = "vst3-com-macros"
-version = "0.2.0"
-source = "git+https://github.com/robbert-vdh/vst3-sys.git?branch=fix%2Fdrop-box-from-raw#b3ff4d775940f5b476b9d1cca02a90e07e1922a2"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
- "vst3-com-macros-support",
-]
-
-[[package]]
-name = "vst3-com-macros-support"
-version = "0.2.0"
-source = "git+https://github.com/robbert-vdh/vst3-sys.git?branch=fix%2Fdrop-box-from-raw#b3ff4d775940f5b476b9d1cca02a90e07e1922a2"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
-]
-
-[[package]]
-name = "vst3-sys"
-version = "0.1.0"
-source = "git+https://github.com/robbert-vdh/vst3-sys.git?branch=fix%2Fdrop-box-from-raw#b3ff4d775940f5b476b9d1cca02a90e07e1922a2"
-dependencies = [
- "vst3-com",
-]
 
 [[package]]
 name = "widestring"
