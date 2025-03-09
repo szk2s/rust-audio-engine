@@ -1,14 +1,12 @@
 use nih_plug::prelude::*;
 use std::sync::Arc;
 
-use crate::audio_graph::AudioGraphNode;
+use crate::audio_graph::AudioGraph;
 use crate::nodes::{GainProcessor, SineGenerator};
-
 // メインのプラグイン実装
 pub struct RustAudioEngine {
     params: Arc<RustAudioEngineParams>,
-    sine_generator: SineGenerator,
-    gain_processor: GainProcessor,
+    audio_graph: AudioGraph,
 }
 
 #[derive(Params)]
@@ -26,8 +24,7 @@ impl Default for RustAudioEngine {
     fn default() -> Self {
         Self {
             params: Arc::new(RustAudioEngineParams::default()),
-            sine_generator: SineGenerator::new(440.0),
-            gain_processor: GainProcessor::new(1.0),
+            audio_graph: AudioGraph::new(),
         }
     }
 }
@@ -105,16 +102,43 @@ impl Plugin for RustAudioEngine {
         self.reset();
 
         let sample_rate = buffer_config.sample_rate;
-        self.sine_generator
+        self.audio_graph
             .prepare(sample_rate, buffer_config.max_buffer_size as usize);
+
+        // パラメーターをノードに反映
+        let mut sine_generator = SineGenerator::new();
+        let mut gain_processor = GainProcessor::new();
+        {
+            // パラメーターからサイン波ジェネレーターの周波数を更新
+            // let frequency = self.params.frequency.smoothed.next();
+            sine_generator.set_frequency(220.0);
+
+            // パラメーターからゲインプロセッサーのゲインを更新
+            let gain = self.params.gain.smoothed.next();
+            gain_processor.set_gain(gain);
+        }
+
+        // ノードをグラフに追加
+        let sine_generator_id = self.audio_graph.add_node(Box::new(sine_generator));
+        let gain_processor_id = self.audio_graph.add_node(Box::new(gain_processor));
+
+        // sine_generator.set_frequency(880.0);
+
+        // グラフにエッジを追加
+        let result = self
+            .audio_graph
+            .add_edge(sine_generator_id, gain_processor_id);
+
+        if let Err(e) = result {
+            println!("エラー: {}", e);
+        }
 
         true
     }
 
     fn reset(&mut self) {
         // 各ノードをリセット
-        self.sine_generator.reset();
-        self.gain_processor.reset();
+        self.audio_graph.reset();
     }
 
     fn process(
@@ -123,24 +147,11 @@ impl Plugin for RustAudioEngine {
         _aux: &mut AuxiliaryBuffers,
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // パラメーターからサイン波ジェネレーターの周波数を更新
-        let frequency = self.params.frequency.smoothed.next();
-        self.sine_generator.set_frequency(frequency);
-
-        // パラメーターからゲインプロセッサーのゲインを更新
-        let gain = self.params.gain.smoothed.next();
-        self.gain_processor.set_gain(gain);
-
         // 現在のチャンネルの &mut [f32] バッファを取得
         let raw_buffer = buffer.as_slice();
 
-        for channel_buffer in raw_buffer.iter_mut() {
-            (*channel_buffer).fill(0.0);
-        }
-
         // プロセッサーチェーンを処理（サイン波生成 → ゲイン処理）
-        self.sine_generator.process(raw_buffer);
-        self.gain_processor.process(raw_buffer);
+        self.audio_graph.process(raw_buffer);
 
         ProcessStatus::Normal
     }

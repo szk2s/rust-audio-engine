@@ -12,9 +12,9 @@ pub struct SineGenerator {
 
 impl SineGenerator {
     /// 新しいSineGeneratorを作成
-    pub fn new(frequency: f32) -> Self {
+    pub fn new() -> Self {
         Self {
-            frequency,
+            frequency: 440.0,
             phase: 0.0,
             sample_rate: 44100.0, // デフォルトのサンプルレート
         }
@@ -71,7 +71,8 @@ mod tests {
 
     #[test]
     fn test_sine_generator() {
-        let mut generator = SineGenerator::new(1.0); // 1Hz
+        let mut generator = SineGenerator::new(); // 1Hz
+        generator.set_frequency(1.0);
         let mut buffer: Vec<f32> = vec![0.0; 4];
         let mut slices: Vec<&mut [f32]> = vec![buffer.as_mut_slice()];
 

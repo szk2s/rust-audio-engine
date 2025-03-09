@@ -8,8 +8,8 @@ pub struct GainProcessor {
 
 impl GainProcessor {
     /// 新しいGainProcessorを作成
-    pub fn new(gain: f32) -> Self {
-        Self { gain }
+    pub fn new() -> Self {
+        Self { gain: 1.0 }
     }
 
     /// ゲインを設定
@@ -42,7 +42,8 @@ mod tests {
     use super::*;
     #[test]
     fn test_gain_processor() {
-        let mut processor = GainProcessor::new(2.0);
+        let mut processor = GainProcessor::new();
+        processor.set_gain(2.0);
         let mut channel_buffer: Vec<f32> = vec![0.5, -0.5, 0.25, -0.25];
         let mut slices: Vec<&mut [f32]> = vec![channel_buffer.as_mut_slice()];
 

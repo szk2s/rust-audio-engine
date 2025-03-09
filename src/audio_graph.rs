@@ -1,5 +1,6 @@
+use std::collections::{HashMap, HashSet};
 /// オーディオグラフのノードのインターフェース
-pub trait AudioGraphNode {
+pub trait AudioGraphNode: Send {
     /// ノードを初期化する
     ///
     /// # 引数
@@ -17,8 +18,6 @@ pub trait AudioGraphNode {
     fn reset(&mut self);
 }
 
-use std::collections::{HashMap, HashSet};
-
 /// オーディオグラフの実装
 ///
 /// 隣接リストを使用してオーディオノード間の接続を管理します。
@@ -33,21 +32,39 @@ pub struct AudioGraph {
     sample_rate: f32,
     /// 最大バッファサイズ
     max_buffer_size: usize,
+    /// キャッシュされたトポロジカルソート結果
+    cached_topo_sort: Vec<usize>,
+    /// キャッシュが有効かどうかのフラグ
+    topo_sort_cache_valid: bool,
 }
 
 impl AudioGraph {
     /// 新しいオーディオグラフを作成する
-    ///
-    /// # 引数
-    /// * `sample_rate` - サンプリングレート（Hz）
-    /// * `max_buffer_size` - 最大バッファサイズ
-    pub fn new(sample_rate: f32, max_buffer_size: usize) -> Self {
+    pub fn new() -> Self {
         Self {
             nodes: HashMap::new(),
             adjacency_list: HashMap::new(),
             next_node_id: 0,
-            sample_rate,
-            max_buffer_size,
+            sample_rate: 44100.0,
+            max_buffer_size: 512,
+            cached_topo_sort: Vec::new(),
+            topo_sort_cache_valid: false,
+        }
+    }
+
+    /// オーディオグラフのパラメータを更新する
+    ///
+    /// # 引数
+    /// * `sample_rate` - サンプリングレート（Hz）
+    /// * `max_buffer_size` - 最大バッファサイズ
+    pub fn prepare(&mut self, sample_rate: f32, max_buffer_size: usize) {
+        // グラフの保持する変数を更新
+        self.sample_rate = sample_rate;
+        self.max_buffer_size = max_buffer_size;
+
+        // ノードにも適用。
+        for node in self.nodes.values_mut() {
+            node.prepare(sample_rate, max_buffer_size);
         }
     }
 
@@ -68,6 +85,9 @@ impl AudioGraph {
         // ノードを保存
         self.nodes.insert(node_id, node);
         self.adjacency_list.insert(node_id, Vec::new());
+
+        // グラフが変更されたのでトポロジカルソートを更新
+        self.update_topological_sort();
 
         node_id
     }
@@ -97,6 +117,9 @@ impl AudioGraph {
 
         // エッジを追加
         self.adjacency_list.get_mut(&from_id).unwrap().push(to_id);
+
+        // グラフが変更されたのでトポロジカルソートを更新
+        self.update_topological_sort();
 
         Ok(())
     }
@@ -128,10 +151,8 @@ impl AudioGraph {
     /// # 引数
     /// * `buffer` - 処理するオーディオバッファ
     pub fn process(&mut self, buffer: &mut [&mut [f32]]) {
-        let order = self.topological_sort();
-
         // 各ノードをトポロジカル順序で処理
-        for node_id in order {
+        for &node_id in &self.cached_topo_sort {
             if let Some(node) = self.nodes.get_mut(&node_id) {
                 node.process(buffer);
             }
@@ -223,6 +244,63 @@ impl AudioGraph {
         // 結果リストに追加
         result.push(node_id);
     }
+
+    /// トポロジカルソートを更新し、キャッシュに保存する
+    fn update_topological_sort(&mut self) {
+        let order = self.topological_sort();
+        self.cached_topo_sort = order;
+        self.topo_sort_cache_valid = true;
+    }
+
+    /// ノードを削除する
+    ///
+    /// # 引数
+    /// * `node_id` - 削除するノードのID
+    ///
+    /// # 戻り値
+    /// * 成功した場合はノードが含まれる `Some`、存在しない場合は `None`
+    pub fn remove_node(&mut self, node_id: usize) -> Option<Box<dyn AudioGraphNode>> {
+        // ノードを削除
+        let node = self.nodes.remove(&node_id);
+
+        // 隣接リストから削除
+        self.adjacency_list.remove(&node_id);
+
+        // 他のノードの隣接リストからも削除
+        for neighbors in self.adjacency_list.values_mut() {
+            neighbors.retain(|&n| n != node_id);
+        }
+
+        // グラフが変更されたのでトポロジカルソートを更新
+        self.update_topological_sort();
+
+        node
+    }
+
+    /// エッジを削除する
+    ///
+    /// # 引数
+    /// * `from_id` - 接続元ノードのID
+    /// * `to_id` - 接続先ノードのID
+    ///
+    /// # 戻り値
+    /// * 成功した場合は `true`、存在しない場合は `false`
+    pub fn remove_edge(&mut self, from_id: usize, to_id: usize) -> bool {
+        if let Some(neighbors) = self.adjacency_list.get_mut(&from_id) {
+            let len_before = neighbors.len();
+            neighbors.retain(|&n| n != to_id);
+            let removed = neighbors.len() < len_before;
+
+            if removed {
+                // グラフが変更されたのでトポロジカルソートを更新
+                self.update_topological_sort();
+            }
+
+            return removed;
+        }
+
+        false
+    }
 }
 
 #[cfg(test)]
@@ -261,7 +339,7 @@ mod tests {
 
     #[test]
     fn test_add_node() {
-        let mut graph = AudioGraph::new(44100.0, 512);
+        let mut graph = AudioGraph::new();
         let node_id = graph.add_node(Box::new(TestNode::new(0.5)));
 
         assert_eq!(node_id, 0);
@@ -271,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_add_edge() {
-        let mut graph = AudioGraph::new(44100.0, 512);
+        let mut graph = AudioGraph::new();
         let node1_id = graph.add_node(Box::new(TestNode::new(0.5)));
         let node2_id = graph.add_node(Box::new(TestNode::new(0.3)));
 
@@ -285,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_cycle_detection() {
-        let mut graph = AudioGraph::new(44100.0, 512);
+        let mut graph = AudioGraph::new();
         let node1_id = graph.add_node(Box::new(TestNode::new(0.5)));
         let node2_id = graph.add_node(Box::new(TestNode::new(0.3)));
         let node3_id = graph.add_node(Box::new(TestNode::new(0.2)));
@@ -301,7 +379,7 @@ mod tests {
 
     #[test]
     fn test_process() {
-        let mut graph = AudioGraph::new(44100.0, 512);
+        let mut graph = AudioGraph::new();
         let node1_id = graph.add_node(Box::new(TestNode::new(0.5)));
         let node2_id = graph.add_node(Box::new(TestNode::new(0.3)));
 
@@ -326,7 +404,7 @@ mod tests {
 
     #[test]
     fn test_get_node() {
-        let mut graph = AudioGraph::new(44100.0, 512);
+        let mut graph = AudioGraph::new();
         let node_id = graph.add_node(Box::new(TestNode::new(0.5)));
 
         assert!(graph.get_node(node_id).is_some());
