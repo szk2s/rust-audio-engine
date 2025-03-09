@@ -9,3 +9,8 @@
 [params.rs](../nih_plug_src/params.rs)
 [plugin.rs](../nih_plug_src/plugin.rs)
 [util.rs](../nih_plug_src/util.rs)
+
+# 実装前に見てほしい nih_plug の example
+
+[gain](../nih_plug_examples/gain/src/lib.rs)
+[sine](../nih_plug_examples/sine/src/lib.rs)
