@@ -12,13 +12,7 @@ pub trait AudioGraphNode {
     /// * `output` - 出力バッファ
     /// * `num_samples` - 処理するサンプル数
     /// * `sample_rate` - サンプリングレート
-    fn process(
-        &mut self,
-        input: Option<&[f32]>,
-        output: &mut [f32],
-        num_samples: usize,
-        sample_rate: f32,
-    );
+    fn process(&mut self, buffer: &mut [f32], num_samples: usize, sample_rate: f32);
 
     /// ノードのリセット
     fn reset(&mut self);
@@ -29,8 +23,10 @@ pub trait AudioGraphNode {
 pub struct SineGenerator {
     /// 周波数
     frequency: f32,
-    /// 現在の位相
+    /// 現在の位相（0～1の範囲で保持）
     phase: f32,
+    /// サンプリングレート
+    sample_rate: f32,
 }
 
 impl SineGenerator {
@@ -39,6 +35,7 @@ impl SineGenerator {
         Self {
             frequency,
             phase: 0.0,
+            sample_rate: 44100.0, // デフォルトのサンプルレート
         }
     }
 
@@ -46,28 +43,38 @@ impl SineGenerator {
     pub fn set_frequency(&mut self, frequency: f32) {
         self.frequency = frequency;
     }
+
+    /// サンプルレートを設定
+    pub fn set_sample_rate(&mut self, sample_rate: f32) {
+        self.sample_rate = sample_rate;
+    }
+
+    /// サイン波を生成する
+    fn calculate_sine(&mut self) -> f32 {
+        // 位相から正弦波を計算（0～1の位相に2πを掛けて正弦関数に入力）
+        let sine = (self.phase * std::f32::consts::TAU).sin();
+
+        // 位相の増分を計算
+        let phase_delta = self.frequency / self.sample_rate;
+
+        // 位相を更新（0～1の範囲に保つ）
+        self.phase += phase_delta;
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+        }
+
+        sine
+    }
 }
 
 impl AudioGraphNode for SineGenerator {
-    fn process(
-        &mut self,
-        _input: Option<&[f32]>,
-        output: &mut [f32],
-        num_samples: usize,
-        sample_rate: f32,
-    ) {
-        // 位相の増分を計算
-        let phase_increment = 2.0 * PI * self.frequency / sample_rate;
+    fn process(&mut self, buffer: &mut [f32], num_samples: usize, sample_rate: f32) {
+        // サンプルレートを更新
+        self.sample_rate = sample_rate;
 
         // サイン波を生成
         for i in 0..num_samples {
-            output[i] = self.phase.sin();
-
-            // 位相を更新（0〜2πの範囲に保つ）
-            self.phase += phase_increment;
-            if self.phase >= 2.0 * PI {
-                self.phase -= 2.0 * PI;
-            }
+            buffer[i] = self.calculate_sine();
         }
     }
 
@@ -96,23 +103,11 @@ impl GainProcessor {
 }
 
 impl AudioGraphNode for GainProcessor {
-    fn process(
-        &mut self,
-        input: Option<&[f32]>,
-        output: &mut [f32],
-        num_samples: usize,
-        sample_rate: f32,
-    ) {
-        if let Some(input_buffer) = input {
-            // 入力があれば、ゲインを適用して出力に書き込む
-            for i in 0..num_samples {
-                output[i] = input_buffer[i] * self.gain;
-            }
-        } else {
-            // 入力がない場合は0を出力
-            for i in 0..num_samples {
-                output[i] = 0.0;
-            }
+    fn process(&mut self, buffer: &mut [f32], num_samples: usize, sample_rate: f32) {
+        // 入力があれば、ゲインを適用して出力に書き込む
+        for i in 0..num_samples {
+            let tmp = buffer[i] * self.gain;
+            buffer[i] = tmp;
         }
     }
 
@@ -126,7 +121,6 @@ struct RustAudioEngine {
     params: Arc<RustAudioEngineParams>,
     sine_generator: SineGenerator,
     gain_processor: GainProcessor,
-    temp_buffer: Vec<f32>,
 }
 
 #[derive(Params)]
@@ -146,7 +140,6 @@ impl Default for RustAudioEngine {
             params: Arc::new(RustAudioEngineParams::default()),
             sine_generator: SineGenerator::new(440.0),
             gain_processor: GainProcessor::new(1.0),
-            temp_buffer: Vec::new(),
         }
     }
 }
@@ -164,7 +157,6 @@ impl Default for RustAudioEngineParams {
                     factor: FloatRange::gain_skew_factor(-30.0, 30.0),
                 },
             )
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
             .with_unit(" dB")
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
@@ -179,10 +171,8 @@ impl Default for RustAudioEngineParams {
                     factor: FloatRange::skew_factor(-2.0),
                 },
             )
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
-            .with_unit(" Hz")
-            .with_value_to_string(formatters::v2s_f32_rounded(2))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            .with_value_to_string(formatters::v2s_f32_hz_then_khz(2))
+            .with_string_to_value(formatters::s2v_f32_hz_then_khz()),
         }
     }
 }
@@ -223,10 +213,6 @@ impl Plugin for RustAudioEngine {
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
-        // バッファをリサイズ
-        self.temp_buffer
-            .resize(buffer_config.max_buffer_size as usize, 0.0);
-
         // ノードをリセット
         self.reset();
 
@@ -253,32 +239,26 @@ impl Plugin for RustAudioEngine {
         let num_channels = buffer.channels();
 
         // パラメーターからサイン波ジェネレーターの周波数を更新
-        for _i in 0..num_samples {
-            let frequency = self.params.frequency.smoothed.next();
-            self.sine_generator.set_frequency(frequency);
+        let frequency = self.params.frequency.smoothed.next();
+        self.sine_generator.set_frequency(frequency);
 
-            // パラメーターからゲインプロセッサーのゲインを更新
-            let gain = self.params.gain.smoothed.next();
-            self.gain_processor.set_gain(gain);
-        }
+        // // パラメーターからゲインプロセッサーのゲインを更新
+        let gain = self.params.gain.smoothed.next();
+        self.gain_processor.set_gain(gain);
+
+        // 0 チャンネルだけ処理を行う
+        let channel_idx = 0;
+
+        // 現在のチャンネルの &mut [f32] バッファを取得
+        let channel_buffer = &mut buffer.as_slice()[channel_idx];
+
+        (*channel_buffer).fill(0.0);
 
         // プロセッサーチェーンを処理（サイン波生成 → ゲイン処理）
-        self.sine_generator.process(
-            None,
-            &mut self.temp_buffer[0..num_samples],
-            num_samples,
-            sample_rate,
-        );
-
-        // 各チャンネルに同じ処理を適用（モノラル信号をステレオにコピー）
-        for mut channel_samples in buffer.iter_samples() {
-            // ゲインプロセッサーを通して出力チャンネルに書き込む
-            for (i, sample) in channel_samples.iter_mut().enumerate() {
-                if i < num_samples {
-                    *sample = self.temp_buffer[i] * self.gain_processor.gain;
-                }
-            }
-        }
+        self.sine_generator
+            .process(*channel_buffer, num_samples, sample_rate);
+        self.gain_processor
+            .process(channel_buffer, num_samples, sample_rate);
 
         ProcessStatus::Normal
     }
@@ -310,7 +290,7 @@ mod tests {
         let mut generator = SineGenerator::new(1.0); // 1Hz
         let mut output = vec![0.0; 4];
 
-        generator.process(None, &mut output, 4, 4.0); // サンプルレート4Hzで1秒分を生成
+        generator.process(&mut output, 4, 4.0); // サンプルレート4Hzで1秒分を生成
 
         // 期待される値: 0, 1, 0, -1（1Hzのサイン波、サンプルレート4Hzの場合）
         assert!(output[0].abs() < 1e-6); // sin(0) = 0
@@ -323,15 +303,14 @@ mod tests {
     #[test]
     fn test_gain_processor() {
         let mut processor = GainProcessor::new(2.0);
-        let input = vec![0.5, -0.5, 0.25, -0.25];
-        let mut output = vec![0.0; 4];
+        let mut buffer = vec![0.5, -0.5, 0.25, -0.25];
 
-        processor.process(Some(&input), &mut output, 4, 44100.0);
+        processor.process(&mut buffer, 4, 44100.0);
 
         // 期待される値: 入力 * 2.0
-        assert_eq!(output[0], 1.0);
-        assert_eq!(output[1], -1.0);
-        assert_eq!(output[2], 0.5);
-        assert_eq!(output[3], -0.5);
+        assert_eq!(buffer[0], 1.0);
+        assert_eq!(buffer[1], -1.0);
+        assert_eq!(buffer[2], 0.5);
+        assert_eq!(buffer[3], -0.5);
     }
 }
