@@ -1,4 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use crate::buffer_utils;
+use crate::directed_graph::DirectedGraph;
+use std::collections::HashMap;
 /// オーディオグラフのノードのインターフェース
 pub trait AudioGraphNode: Send {
     /// ノードを初期化する
@@ -21,35 +23,81 @@ pub trait AudioGraphNode: Send {
 /// オーディオグラフの実装
 ///
 /// 隣接リストを使用してオーディオノード間の接続を管理します。
+///
+/// このオーディオグラフはリアルタイムのオーディオ処理のためのグラフです。
+/// リアルタイムスレッドのループで process 関数呼び出されます。
+/// ノードやエッジの挿入などの操作を行った場合、リアルタイムに process 関数のバッファー書き込み処理に反映されます。
 pub struct AudioGraph {
     /// ノードのマップ（IDとノードのペア）
     nodes: HashMap<usize, Box<dyn AudioGraphNode>>,
-    /// 隣接リスト（各ノードIDから接続先ノードIDのリスト）
-    adjacency_list: HashMap<usize, Vec<usize>>,
+    /// グラフ構造
+    graph: DirectedGraph<usize>,
     /// 次に割り当てられるノードID
     next_node_id: usize,
     /// サンプリングレート
     sample_rate: f32,
     /// 最大バッファサイズ
     max_buffer_size: usize,
-    /// キャッシュされたトポロジカルソート結果
-    cached_topo_sort: Vec<usize>,
-    /// キャッシュが有効かどうかのフラグ
-    topo_sort_cache_valid: bool,
+    /// 入力ノードのID
+    input_node_id: usize,
+    /// 出力ノードのID
+    output_node_id: usize,
+    /// 各ノードの出力バッファのキャッシュ（リアルタイムセーフな処理のため）
+    node_outputs: HashMap<usize, Vec<Vec<f32>>>,
+    /// 一時的な入力バッファ（リアルタイムセーフな処理のため）
+    temp_input_buffer: Vec<Vec<f32>>,
+    /// 処理中のチャンネル数
+    num_channels: usize,
 }
 
 impl AudioGraph {
     /// 新しいオーディオグラフを作成する
     pub fn new() -> Self {
+        let graph = DirectedGraph::<usize>::new();
+
+        let mut nodes = HashMap::new();
+        let input_node: Box<dyn AudioGraphNode> = Box::new(InputNode::new());
+        let output_node: Box<dyn AudioGraphNode> = Box::new(OutputNode::new());
+
+        // グラフにノードを追加
+        let input_node_id = 0;
+        let output_node_id = 1;
+
+        let mut new_graph = DirectedGraph::<usize>::new();
+        new_graph.add_node(input_node_id);
+        new_graph.add_node(output_node_id);
+
+        nodes.insert(input_node_id, input_node);
+        nodes.insert(output_node_id, output_node);
+
         Self {
-            nodes: HashMap::new(),
-            adjacency_list: HashMap::new(),
-            next_node_id: 0,
+            nodes,
+            graph: new_graph,
+            next_node_id: 2, // 次に割り当てるIDは2から
             sample_rate: 44100.0,
             max_buffer_size: 512,
-            cached_topo_sort: Vec::new(),
-            topo_sort_cache_valid: false,
+            input_node_id,
+            output_node_id,
+            node_outputs: HashMap::new(),
+            temp_input_buffer: Vec::new(),
+            num_channels: 0,
         }
+    }
+
+    /// 入力ノードのIDを取得する
+    ///
+    /// # 戻り値
+    /// * `usize` - 入力ノードのID
+    pub fn get_input_node_id(&self) -> usize {
+        self.input_node_id
+    }
+
+    /// 出力ノードのIDを取得する
+    ///
+    /// # 戻り値
+    /// * `usize` - 出力ノードのID
+    pub fn get_output_node_id(&self) -> usize {
+        self.output_node_id
     }
 
     /// オーディオグラフのパラメータを更新する
@@ -57,12 +105,37 @@ impl AudioGraph {
     /// # 引数
     /// * `sample_rate` - サンプリングレート（Hz）
     /// * `max_buffer_size` - 最大バッファサイズ
+    ///
+    /// # 実装時の注意
+    /// この関数はサンプルレートやバッファーサイズ変更時に一度だけ、メインスレッドなどの非リアルタイムスレッドから呼び出されます。
     pub fn prepare(&mut self, sample_rate: f32, max_buffer_size: usize) {
-        // グラフの保持する変数を更新
         self.sample_rate = sample_rate;
         self.max_buffer_size = max_buffer_size;
 
-        // ノードにも適用。
+        // デフォルトでステレオ（2チャンネル）を想定
+        self.num_channels = 2;
+
+        // ノード出力バッファを事前に確保
+        self.node_outputs.clear();
+        // グラフ内の全ノードIDを取得
+        for &node_id in self
+            .graph
+            .node_ids()
+            .copied()
+            .collect::<Vec<_>>()
+            .as_slice()
+        {
+            self.node_outputs.insert(
+                node_id,
+                buffer_utils::create_audio_buffer(self.num_channels, max_buffer_size, 0.0),
+            );
+        }
+
+        // 一時入力バッファを事前に確保
+        self.temp_input_buffer =
+            buffer_utils::create_audio_buffer(self.num_channels, max_buffer_size, 0.0);
+
+        // 各ノードを準備
         for node in self.nodes.values_mut() {
             node.prepare(sample_rate, max_buffer_size);
         }
@@ -75,19 +148,29 @@ impl AudioGraph {
     ///
     /// # 戻り値
     /// * 追加されたノードのID
+    ///
+    /// # 実装時の注意
+    /// この関数はメインスレッドなどの非リアルタイムスレッドから呼び出されることを想定しています。
     pub fn add_node(&mut self, mut node: Box<dyn AudioGraphNode>) -> usize {
         let node_id = self.next_node_id;
         self.next_node_id += 1;
 
+        // ノードにグラフIDを割り当て
+        self.graph.add_node(node_id);
+
         // ノードを初期化
         node.prepare(self.sample_rate, self.max_buffer_size);
 
-        // ノードを保存
+        // ノードをノードマップに追加
         self.nodes.insert(node_id, node);
-        self.adjacency_list.insert(node_id, Vec::new());
 
-        // グラフが変更されたのでトポロジカルソートを更新
-        self.update_topological_sort();
+        // ノード出力バッファをあらかじめ確保
+        if !self.node_outputs.is_empty() {
+            self.node_outputs.insert(
+                node_id,
+                buffer_utils::create_audio_buffer(self.num_channels, self.max_buffer_size, 0.0),
+            );
+        }
 
         node_id
     }
@@ -100,28 +183,12 @@ impl AudioGraph {
     ///
     /// # 戻り値
     /// * 成功した場合は `Ok(())`、失敗した場合は `Err` でエラーメッセージを返す
+    ///
+    /// # 実装時の注意
+    /// この関数はメインスレッドなどの非リアルタイムスレッドから呼び出されることを想定しています。
     pub fn add_edge(&mut self, from_id: usize, to_id: usize) -> Result<(), String> {
-        // 両方のノードが存在するか確認
-        if !self.nodes.contains_key(&from_id) {
-            return Err(format!("ノードID {}が存在しません", from_id));
-        }
-
-        if !self.nodes.contains_key(&to_id) {
-            return Err(format!("ノードID {}が存在しません", to_id));
-        }
-
-        // 循環参照をチェック
-        if self.would_create_cycle(from_id, to_id) {
-            return Err("この接続は循環参照を作成します".to_string());
-        }
-
-        // エッジを追加
-        self.adjacency_list.get_mut(&from_id).unwrap().push(to_id);
-
-        // グラフが変更されたのでトポロジカルソートを更新
-        self.update_topological_sort();
-
-        Ok(())
+        // DirectedGraphにエッジを追加（サイクルチェックなどもここで行われる）
+        self.graph.add_edge(from_id, to_id)
     }
 
     /// ノードを取得する
@@ -131,6 +198,9 @@ impl AudioGraph {
     ///
     /// # 戻り値
     /// * ノードが存在する場合は `Some` でBoxに包まれた参照を返し、存在しない場合は `None` を返す
+    ///
+    /// # 実装時の注意
+    /// この関数はメインスレッドなどの非リアルタイムスレッドから呼び出されることを想定しています。
     pub fn get_node(&self, node_id: usize) -> Option<&Box<dyn AudioGraphNode>> {
         self.nodes.get(&node_id)
     }
@@ -142,6 +212,9 @@ impl AudioGraph {
     ///
     /// # 戻り値
     /// * ノードが存在する場合は `Some` でBoxに包まれた可変参照を返し、存在しない場合は `None` を返す
+    ///
+    /// # 実装時の注意
+    /// この関数はメインスレッドなどの非リアルタイムスレッドから呼び出されることを想定しています。
     pub fn get_node_mut(&mut self, node_id: usize) -> Option<&mut Box<dyn AudioGraphNode>> {
         self.nodes.get_mut(&node_id)
     }
@@ -150,106 +223,107 @@ impl AudioGraph {
     ///
     /// # 引数
     /// * `buffer` - 処理するオーディオバッファ
+    ///
+    /// # 実装時の注意
+    /// この関数はリアルタイムスレッドから呼び出されることを想定しています。
+    /// 実装者はメモリアロケーションなどの遅延を生む処理を行わないように注意してください。
     pub fn process(&mut self, buffer: &mut [&mut [f32]]) {
-        // 各ノードをトポロジカル順序で処理
-        for &node_id in &self.cached_topo_sort {
-            if let Some(node) = self.nodes.get_mut(&node_id) {
-                node.process(buffer);
-            }
+        let num_channels = buffer.len();
+        if num_channels == 0 {
+            return;
         }
+
+        // 処理中のチャンネル数が変わった場合のハンドリングは未実装。
+        if num_channels != self.num_channels {
+            return;
+        }
+
+        let buffer_size = buffer[0].len();
+        let graph = self.graph.get_real_time_safe_interface();
+
+        // 各ノードのバッファをクリア
+        buffer_utils::clear_buffer(buffer);
+
+        // オーディオ処理では入力から出力への順序で処理するため、トポロジカル順序を反転
+        let processing_order = graph.get_reverse_topological_order();
+
+        // 入力ノードから出力ノードへの順序でノードを処理
+        for &node_id in processing_order {
+            // このノードへの入力エッジを持つノードを検索
+            let input_node_ids = graph.get_input_node_ids(node_id);
+
+            // 一時入力バッファをクリア
+            buffer_utils::clear_vector_buffer(&mut self.temp_input_buffer);
+
+            // 入力ノードからの出力を合計して入力バッファに格納
+            for &input_id in input_node_ids {
+                if let Some(input_buffer) = self.node_outputs.get(&input_id) {
+                    // 各チャンネル、各サンプルを加算
+                    buffer_utils::add_buffer(
+                        buffer_utils::buffer_to_immutable_slices(input_buffer).as_slice(),
+                        buffer_utils::buffer_to_slices(&mut self.temp_input_buffer).as_mut_slice(),
+                    );
+                }
+            }
+
+            // 入力ノードの場合、外部入力バッファからデータをコピー
+            if node_id == self.input_node_id {
+                for (ch, channel) in buffer.iter().enumerate() {
+                    if ch < self.temp_input_buffer.len() {
+                        for (i, &sample) in channel.iter().enumerate() {
+                            if i < self.temp_input_buffer[ch].len() && i < buffer_size {
+                                self.temp_input_buffer[ch][i] = sample;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 現在のノードの出力バッファへの参照を取得
+            let mut node_output = match self.node_outputs.get_mut(&node_id) {
+                Some(output) => output,
+                None => continue, // 出力バッファがない場合はスキップ
+            };
+
+            // process関数で使用するための一時的なスライス配列を準備
+            let mut temp_slices = Vec::with_capacity(num_channels);
+
+            // バッファサイズを考慮してスライスを作成
+            for channel in self.temp_input_buffer.iter_mut() {
+                let actual_size = std::cmp::min(channel.len(), buffer_size);
+                temp_slices.push(&mut channel[..actual_size]);
+            }
+
+            // 現在のノードの処理を呼び出し
+            if let Some(node) = self.nodes.get_mut(&node_id) {
+                node.process(&mut temp_slices);
+            }
+
+            // 処理結果をノードの出力バッファにコピー
+            buffer_utils::copy_from_mut_slices(&temp_slices, &mut node_output);
+        }
+
+        // 出力ノードの出力バッファへの参照を取得
+        let node_output = match self.node_outputs.get_mut(&self.output_node_id) {
+            Some(output) => output,
+            None => return, // 出力バッファがない場合はスキップ
+        };
+
+        // 出力ノードの出力を外部バッファにコピー
+        buffer_utils::copy_buffer(
+            buffer_utils::buffer_to_immutable_slices(node_output).as_slice(),
+            buffer,
+        );
     }
 
     /// グラフのすべてのノードをリセットする
+    ///
+    /// # 実装時の注意
+    /// この関数はメインスレッドなどの非リアルタイムスレッドから呼び出されることを想定しています。
     pub fn reset(&mut self) {
         for node in self.nodes.values_mut() {
             node.reset();
         }
-    }
-
-    /// 指定された接続が循環参照を作成するかチェックする
-    fn would_create_cycle(&self, from_id: usize, to_id: usize) -> bool {
-        // to_id から始まる経路がfrom_idに戻るかをチェック
-        let mut visited = HashSet::new();
-        let mut stack = vec![to_id];
-
-        while let Some(current) = stack.pop() {
-            if current == from_id {
-                return true; // 循環参照を発見
-            }
-
-            if !visited.insert(current) {
-                continue; // 既に訪問済み
-            }
-
-            if let Some(neighbors) = self.adjacency_list.get(&current) {
-                for &neighbor in neighbors {
-                    stack.push(neighbor);
-                }
-            }
-        }
-
-        false
-    }
-
-    /// グラフのトポロジカルソートを実行する
-    fn topological_sort(&self) -> Vec<usize> {
-        let mut result = Vec::new();
-        let mut visited = HashSet::new();
-        let mut temp_mark = HashSet::new();
-
-        // すべてのノードを訪問
-        for &node_id in self.nodes.keys() {
-            if !visited.contains(&node_id) {
-                self.visit(node_id, &mut visited, &mut temp_mark, &mut result);
-            }
-        }
-
-        result
-    }
-
-    /// トポロジカルソートのためのDFS訪問
-    fn visit(
-        &self,
-        node_id: usize,
-        visited: &mut HashSet<usize>,
-        temp_mark: &mut HashSet<usize>,
-        result: &mut Vec<usize>,
-    ) {
-        // 一時マークがあれば循環があるので何もしない
-        if temp_mark.contains(&node_id) {
-            return;
-        }
-
-        // 既に訪問済みならスキップ
-        if visited.contains(&node_id) {
-            return;
-        }
-
-        // 一時マークを付ける
-        temp_mark.insert(node_id);
-
-        // 隣接ノードを訪問
-        if let Some(neighbors) = self.adjacency_list.get(&node_id) {
-            for &neighbor in neighbors {
-                self.visit(neighbor, visited, temp_mark, result);
-            }
-        }
-
-        // 一時マークを外す
-        temp_mark.remove(&node_id);
-
-        // 訪問済みマークを付ける
-        visited.insert(node_id);
-
-        // 結果リストに追加
-        result.push(node_id);
-    }
-
-    /// トポロジカルソートを更新し、キャッシュに保存する
-    fn update_topological_sort(&mut self) {
-        let order = self.topological_sort();
-        self.cached_topo_sort = order;
-        self.topo_sort_cache_valid = true;
     }
 
     /// ノードを削除する
@@ -259,22 +333,25 @@ impl AudioGraph {
     ///
     /// # 戻り値
     /// * 成功した場合はノードが含まれる `Some`、存在しない場合は `None`
+    ///
+    /// # 実装時の注意
+    /// この関数はメインスレッドなどの非リアルタイムスレッドから呼び出されることを想定しています。
     pub fn remove_node(&mut self, node_id: usize) -> Option<Box<dyn AudioGraphNode>> {
-        // ノードを削除
-        let node = self.nodes.remove(&node_id);
-
-        // 隣接リストから削除
-        self.adjacency_list.remove(&node_id);
-
-        // 他のノードの隣接リストからも削除
-        for neighbors in self.adjacency_list.values_mut() {
-            neighbors.retain(|&n| n != node_id);
+        // 入力ノードと出力ノードは削除できない
+        if node_id == self.input_node_id || node_id == self.output_node_id {
+            return None;
         }
 
-        // グラフが変更されたのでトポロジカルソートを更新
-        self.update_topological_sort();
+        // グラフからノードを削除
+        if !self.graph.remove_node(node_id) {
+            return None;
+        }
 
-        node
+        // ノード出力バッファを削除
+        self.node_outputs.remove(&node_id);
+
+        // ノードマップからノードを削除して返す
+        self.nodes.remove(&node_id)
     }
 
     /// エッジを削除する
@@ -285,21 +362,57 @@ impl AudioGraph {
     ///
     /// # 戻り値
     /// * 成功した場合は `true`、存在しない場合は `false`
+    ///
+    /// # 実装時の注意
+    /// この関数はメインスレッドなどの非リアルタイムスレッドから呼び出されることを想定しています。
     pub fn remove_edge(&mut self, from_id: usize, to_id: usize) -> bool {
-        if let Some(neighbors) = self.adjacency_list.get_mut(&from_id) {
-            let len_before = neighbors.len();
-            neighbors.retain(|&n| n != to_id);
-            let removed = neighbors.len() < len_before;
+        self.graph.remove_edge(from_id, to_id)
+    }
+}
 
-            if removed {
-                // グラフが変更されたのでトポロジカルソートを更新
-                self.update_topological_sort();
-            }
+/// 入力ノード - グラフの入力点を示すマーカーノード
+struct InputNode {}
 
-            return removed;
-        }
+impl InputNode {
+    fn new() -> Self {
+        Self {}
+    }
+}
 
-        false
+impl AudioGraphNode for InputNode {
+    fn prepare(&mut self, _sample_rate: f32, _max_num_samples: usize) {
+        // 何もしない
+    }
+
+    fn process(&mut self, _buffer: &mut [&mut [f32]]) {
+        // 何もしない
+    }
+
+    fn reset(&mut self) {
+        // 何もしない
+    }
+}
+
+/// 出力ノード - グラフの出力点を示すマーカーノード
+struct OutputNode {}
+
+impl OutputNode {
+    fn new() -> Self {
+        Self {}
+    }
+}
+
+impl AudioGraphNode for OutputNode {
+    fn prepare(&mut self, _sample_rate: f32, _max_num_samples: usize) {
+        // 何もしない
+    }
+
+    fn process(&mut self, _buffer: &mut [&mut [f32]]) {
+        // 何もしない
+    }
+
+    fn reset(&mut self) {
+        // 何もしない
     }
 }
 
@@ -324,10 +437,10 @@ mod tests {
         }
 
         fn process(&mut self, buffer: &mut [&mut [f32]]) {
-            // すべてのサンプルに値を追加
+            // すべてのサンプルの値を value にします。
             for channel in buffer.iter_mut() {
                 for sample in channel.iter_mut() {
-                    *sample += self.value;
+                    *sample = self.value;
                 }
             }
         }
@@ -340,11 +453,13 @@ mod tests {
     #[test]
     fn test_add_node() {
         let mut graph = AudioGraph::new();
+        // 入力ノードと出力ノードが含まれているはず
+        assert_eq!(graph.nodes.len(), 2);
+
         let node_id = graph.add_node(Box::new(TestNode::new(0.5)));
 
-        assert_eq!(node_id, 0);
+        assert_eq!(graph.nodes.len(), 3);
         assert!(graph.nodes.contains_key(&node_id));
-        assert!(graph.adjacency_list.contains_key(&node_id));
     }
 
     #[test]
@@ -355,10 +470,6 @@ mod tests {
 
         let result = graph.add_edge(node1_id, node2_id);
         assert!(result.is_ok());
-
-        let edges = graph.adjacency_list.get(&node1_id).unwrap();
-        assert_eq!(edges.len(), 1);
-        assert_eq!(edges[0], node2_id);
     }
 
     #[test]
@@ -378,12 +489,20 @@ mod tests {
     }
 
     #[test]
-    fn test_process() {
+    fn test_serial_process() {
         let mut graph = AudioGraph::new();
+        graph.prepare(44100.0, 4);
+
+        let input_node_id = graph.get_input_node_id();
+        let output_node_id = graph.get_output_node_id();
         let node1_id = graph.add_node(Box::new(TestNode::new(0.5)));
         let node2_id = graph.add_node(Box::new(TestNode::new(0.3)));
 
+        // 直列に接続。
+        // 入力ノード -> node1 -> node2 -> 出力ノード
+        assert!(graph.add_edge(input_node_id, node1_id).is_ok());
         assert!(graph.add_edge(node1_id, node2_id).is_ok());
+        assert!(graph.add_edge(node2_id, output_node_id).is_ok());
 
         // 2チャンネル、4サンプルのバッファを作成
         let mut buffer1: Vec<f32> = vec![0.0; 4];
@@ -394,6 +513,48 @@ mod tests {
         graph.process(&mut buffers);
 
         // トポロジカル順序で処理されるため、node1とnode2の両方が適用されるはず
+        for channel in buffers.iter() {
+            for &sample in channel.iter() {
+                // 最後のノードの値になるはず。
+                assert_eq!(sample, 0.3);
+            }
+        }
+    }
+
+    #[test]
+    fn test_parallel_process() {
+        let mut graph = AudioGraph::new();
+        graph.prepare(44100.0, 4);
+
+        let input_node_id = graph.get_input_node_id();
+        let node1_id = graph.add_node(Box::new(TestNode::new(0.5)));
+        let node2_id = graph.add_node(Box::new(TestNode::new(0.3)));
+        let output_node_id = graph.get_output_node_id();
+
+        /*
+        両方のノードを出力ノードに接続する（並列処理）
+        ```mermaid
+        flowchart LR
+            入力ノード --> ノード1
+            入力ノード --> ノード2
+            ノード1 --> 出力ノード
+            ノード2 --> 出力ノード
+        ```
+        */
+        assert!(graph.add_edge(input_node_id, node1_id).is_ok());
+        assert!(graph.add_edge(input_node_id, node2_id).is_ok());
+        assert!(graph.add_edge(node1_id, output_node_id).is_ok());
+        assert!(graph.add_edge(node2_id, output_node_id).is_ok());
+
+        // 2チャンネル、4サンプルのバッファを作成
+        let mut buffer1: Vec<f32> = vec![0.0; 4];
+        let mut buffer2: Vec<f32> = vec![0.0; 4];
+        let mut buffers: Vec<&mut [f32]> = vec![&mut buffer1, &mut buffer2];
+
+        // グラフを処理
+        graph.process(&mut buffers);
+
+        // node1とnode2のが合流するので両方が適用されるはず
         for channel in buffers.iter() {
             for &sample in channel.iter() {
                 // 0.5 + 0.3 = 0.8

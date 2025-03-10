@@ -2,7 +2,7 @@ use nih_plug::prelude::*;
 use std::sync::Arc;
 
 use crate::audio_graph::AudioGraph;
-use crate::nodes::{GainProcessor, SineGenerator};
+use crate::nodes::{GainProcessor, SawGenerator, SineGenerator};
 // メインのプラグイン実装
 pub struct RustAudioEngine {
     params: Arc<RustAudioEngineParams>,
@@ -108,6 +108,8 @@ impl Plugin for RustAudioEngine {
         // パラメーターをノードに反映
         let mut sine_generator = SineGenerator::new();
         let mut gain_processor = GainProcessor::new();
+        let mut saw_generator = SawGenerator::new();
+        // パラメーターの設定
         {
             // パラメーターからサイン波ジェネレーターの周波数を更新
             // let frequency = self.params.frequency.smoothed.next();
@@ -116,22 +118,25 @@ impl Plugin for RustAudioEngine {
             // パラメーターからゲインプロセッサーのゲインを更新
             let gain = self.params.gain.smoothed.next();
             gain_processor.set_gain(gain);
+
+            // パラメーターからノコギリ波ジェネレーターの周波数を更新
+            saw_generator.set_frequency(523.25);
         }
 
         // ノードをグラフに追加
         let sine_generator_id = self.audio_graph.add_node(Box::new(sine_generator));
         let gain_processor_id = self.audio_graph.add_node(Box::new(gain_processor));
+        let saw_generator_id = self.audio_graph.add_node(Box::new(saw_generator));
 
         // sine_generator.set_frequency(880.0);
 
         // グラフにエッジを追加
-        let result = self
+        let _ = self
             .audio_graph
             .add_edge(sine_generator_id, gain_processor_id);
-
-        if let Err(e) = result {
-            println!("エラー: {}", e);
-        }
+        let _ = self
+            .audio_graph
+            .add_edge(saw_generator_id, gain_processor_id);
 
         true
     }
