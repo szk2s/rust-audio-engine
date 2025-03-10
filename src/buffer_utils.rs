@@ -1,5 +1,4 @@
 /// オーディオバッファ操作のためのユーティリティ関数
-use crate::audio_buffer::AudioBuffer;
 
 /// 指定されたチャンネル数とバッファサイズで初期化されたオーディオバッファを作成します
 ///
@@ -162,86 +161,6 @@ pub fn copy_from_mut_slices(src_buffer: &[&mut [f32]], dst_buffer: &mut [Vec<f32
                     dst_buffer[ch_idx][samp_idx] = samp;
                 }
             }
-        }
-    }
-}
-
-/// AudioBuffer をクリアします（すべてのサンプルを0.0に設定）
-///
-/// # 引数
-/// * `buffer` - クリアする AudioBuffer
-///
-/// # リアルタイム安全性
-/// * この関数はメモリ割り当てを行わないためリアルタイム安全です。
-pub fn clear_audiobuffer(buffer: &mut AudioBuffer) {
-    for samples in buffer.iter_samples() {
-        for sample in samples {
-            *sample = 0.0;
-        }
-    }
-}
-
-/// Vec<&mut [f32]> から AudioBuffer を作成します
-///
-/// # 引数
-/// * `slices` - 変換するスライスのベクトル
-/// * `num_samples` - サンプル数
-///
-/// # 戻り値
-/// * AudioBuffer
-///
-/// # リアルタイム安全性
-/// * この関数はメモリ割り当てを行うためリアルタイム安全ではありません。オーディオコールバック外で使用してください。
-pub fn slices_to_audiobuffer<'a>(
-    slices: &'a mut [&'a mut [f32]],
-    num_samples: usize,
-) -> AudioBuffer<'a> {
-    let mut buffer = AudioBuffer::default();
-    unsafe {
-        buffer.set_slices(num_samples, |output_slices| {
-            output_slices.clear();
-            for slice in slices {
-                output_slices.push(*slice);
-            }
-        });
-    }
-    buffer
-}
-
-/// AudioBuffer から Vec<&mut [f32]> にデータをコピーします
-///
-/// # 引数
-/// * `src_buffer` - ソース AudioBuffer
-/// * `dst_buffer` - 宛先スライスのベクトル
-///
-/// # リアルタイム安全性
-/// * この関数はメモリ割り当てを行わないためリアルタイム安全です。
-pub fn copy_audiobuffer_to_slices(src_buffer: &mut AudioBuffer, dst_buffer: &mut [&mut [f32]]) {
-    let src_slices = src_buffer.as_slice();
-
-    for ch_idx in 0..std::cmp::min(src_slices.len(), dst_buffer.len()) {
-        let len = std::cmp::min(src_slices[ch_idx].len(), dst_buffer[ch_idx].len());
-        for i in 0..len {
-            dst_buffer[ch_idx][i] = src_slices[ch_idx][i];
-        }
-    }
-}
-
-/// Vec<&mut [f32]> から AudioBuffer にデータをコピーします
-///
-/// # 引数
-/// * `src_buffer` - ソーススライスのベクトル
-/// * `dst_buffer` - 宛先 AudioBuffer
-///
-/// # リアルタイム安全性
-/// * この関数はメモリ割り当てを行わないためリアルタイム安全です。
-pub fn copy_slices_to_audiobuffer(src_buffer: &[&mut [f32]], dst_buffer: &mut AudioBuffer) {
-    let dst_slices = dst_buffer.as_slice();
-
-    for ch_idx in 0..std::cmp::min(src_buffer.len(), dst_slices.len()) {
-        let len = std::cmp::min(src_buffer[ch_idx].len(), dst_slices[ch_idx].len());
-        for i in 0..len {
-            dst_slices[ch_idx][i] = src_buffer[ch_idx][i];
         }
     }
 }
