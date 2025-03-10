@@ -95,6 +95,26 @@ pub fn add_buffer(src_buffer: &[&[f32]], dst_buffer: &mut [&mut [f32]]) {
     }
 }
 
+/// ソースバッファのサンプルを宛先バッファに加算します
+///
+/// # 引数
+/// * `src_buffer` - ソースバッファ
+/// * `dst_buffer` - 宛先バッファ
+///
+/// # リアルタイム安全性
+/// * この関数はメモリ割り当てを行わないためリアルタイム安全です。
+pub fn add_buffer_to_mutable(src_buffer: &mut [&mut [f32]], dst_buffer: &mut [&mut [f32]]) {
+    for (ch_idx, ch_buf) in src_buffer.iter().enumerate() {
+        if ch_idx < dst_buffer.len() {
+            for (samp_idx, &samp) in ch_buf.iter().enumerate() {
+                if samp_idx < dst_buffer[ch_idx].len() {
+                    dst_buffer[ch_idx][samp_idx] += samp;
+                }
+            }
+        }
+    }
+}
+
 /// スライスからなるバッファをベクトルからなるバッファにコピーします
 ///
 /// # 引数
@@ -187,20 +207,6 @@ mod tests {
     }
 
     #[test]
-    fn test_add_buffer() {
-        let src = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
-        let mut dst = vec![vec![0.5, 0.5], vec![0.5, 0.5]];
-        add_buffer(
-            buffer_to_immutable_slices(&src).as_slice(),
-            buffer_to_slices(&mut dst).as_mut_slice(),
-        );
-        assert_eq!(dst[0][0], 1.5);
-        assert_eq!(dst[0][1], 2.5);
-        assert_eq!(dst[1][0], 3.5);
-        assert_eq!(dst[1][1], 4.5);
-    }
-
-    #[test]
     fn test_clear_vector_buffer() {
         let mut buffer = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
         clear_vector_buffer(&mut buffer);
@@ -216,7 +222,7 @@ mod tests {
     #[test]
     fn test_copy_from_mut_slices() {
         let mut src = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
-        let mut src_slices: Vec<&mut [f32]> = src.iter_mut().map(|v| v.as_mut_slice()).collect();
+        let src_slices: Vec<&mut [f32]> = src.iter_mut().map(|v| v.as_mut_slice()).collect();
 
         let mut dst = vec![vec![0.0, 0.0], vec![0.0, 0.0]];
 

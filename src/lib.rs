@@ -1,3 +1,5 @@
+mod audio_buffer;
+mod audio_buffer_utils;
 mod audio_graph;
 mod buffer_utils;
 mod directed_graph;

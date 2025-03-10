@@ -1,12 +1,16 @@
 use nih_plug::prelude::*;
 use std::sync::Arc;
 
+use crate::audio_buffer::AudioBuffer;
 use crate::audio_graph::AudioGraph;
 use crate::nodes::{GainProcessor, SawGenerator, SineGenerator};
 // メインのプラグイン実装
 pub struct RustAudioEngine {
     params: Arc<RustAudioEngineParams>,
     audio_graph: AudioGraph,
+    tmp_buffer: Vec<f32>,
+    num_channels: usize,
+    num_samples: usize,
 }
 
 #[derive(Params)]
@@ -25,6 +29,9 @@ impl Default for RustAudioEngine {
         Self {
             params: Arc::new(RustAudioEngineParams::default()),
             audio_graph: AudioGraph::new(),
+            tmp_buffer: Vec::new(),
+            num_channels: 0,
+            num_samples: 0,
         }
     }
 }
@@ -94,7 +101,7 @@ impl Plugin for RustAudioEngine {
 
     fn initialize(
         &mut self,
-        _audio_io_layout: &AudioIOLayout,
+        audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
@@ -102,6 +109,18 @@ impl Plugin for RustAudioEngine {
         self.reset();
 
         let sample_rate = buffer_config.sample_rate;
+        self.num_samples = buffer_config.max_buffer_size as usize;
+        // AudioIOLayout から出力チャンネル数を取得します。
+        // プラグインはステレオ出力に設定しているため、必ず Some であることが期待されます。
+        self.num_channels = audio_io_layout
+            .main_output_channels
+            .expect("出力チャンネルが設定されていません")
+            .get() as usize;
+
+        // 一時バッファのサイズを更新します。
+        self.tmp_buffer
+            .resize(self.num_channels * self.num_samples, 0.0);
+
         self.audio_graph
             .prepare(sample_rate, buffer_config.max_buffer_size as usize);
 
@@ -124,19 +143,24 @@ impl Plugin for RustAudioEngine {
         }
 
         // ノードをグラフに追加
+        let input_node_id = self.audio_graph.get_input_node_id();
+        let output_node_id = self.audio_graph.get_output_node_id();
         let sine_generator_id = self.audio_graph.add_node(Box::new(sine_generator));
         let gain_processor_id = self.audio_graph.add_node(Box::new(gain_processor));
         let saw_generator_id = self.audio_graph.add_node(Box::new(saw_generator));
 
-        // sine_generator.set_frequency(880.0);
-
         // グラフにエッジを追加
+        let _ = self.audio_graph.add_edge(input_node_id, sine_generator_id);
+        let _ = self
+            .audio_graph
+            .add_edge(sine_generator_id, gain_processor_id);
         let _ = self
             .audio_graph
             .add_edge(sine_generator_id, gain_processor_id);
         let _ = self
             .audio_graph
             .add_edge(saw_generator_id, gain_processor_id);
+        let _ = self.audio_graph.add_edge(gain_processor_id, output_node_id);
 
         true
     }
@@ -152,11 +176,23 @@ impl Plugin for RustAudioEngine {
         _aux: &mut AuxiliaryBuffers,
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // 現在のチャンネルの &mut [f32] バッファを取得
-        let raw_buffer = buffer.as_slice();
+        let mut audio_buffer =
+            AudioBuffer::new(self.num_channels, self.num_samples, &mut self.tmp_buffer);
+
+        // 引数のバッファをオーディオバッファへコピー
+        for ch in 0..self.num_channels {
+            audio_buffer.copy_channel_buffer(ch, &buffer.as_slice_immutable()[ch]);
+        }
 
         // プロセッサーチェーンを処理（サイン波生成 → ゲイン処理）
-        self.audio_graph.process(raw_buffer);
+        self.audio_graph.process(&mut audio_buffer);
+
+        // 引数のバッファへ書き戻し
+        for ch in 0..self.num_channels {
+            for i in 0..self.num_samples {
+                buffer.as_slice()[ch][i] = audio_buffer.get_channel_buffer(ch)[i];
+            }
+        }
 
         ProcessStatus::Normal
     }

@@ -1,4 +1,4 @@
-use crate::audio_graph::AudioGraphNode;
+use crate::{audio_buffer::AudioBuffer, audio_graph::AudioGraphNode};
 
 /// ゲインを処理するプロセッサー
 pub struct GainProcessor {
@@ -23,12 +23,10 @@ impl AudioGraphNode for GainProcessor {
         // 何もしない。
     }
 
-    fn process(&mut self, buffer: &mut [&mut [f32]]) {
+    fn process(&mut self, buffer: &mut AudioBuffer) {
         // 入力があれば、ゲインを適用して出力に書き込む
-        for ch in 0..buffer.len() {
-            for i in 0..buffer[ch].len() {
-                buffer[ch][i] = buffer[ch][i] * self.gain;
-            }
+        for sample in buffer.to_mutable_slice() {
+            *sample = *sample * self.gain;
         }
     }
 
@@ -44,15 +42,15 @@ mod tests {
     fn test_gain_processor() {
         let mut processor = GainProcessor::new();
         processor.set_gain(2.0);
-        let mut channel_buffer: Vec<f32> = vec![0.5, -0.5, 0.25, -0.25];
-        let mut slices: Vec<&mut [f32]> = vec![channel_buffer.as_mut_slice()];
+        let mut vector: Vec<f32> = vec![0.5, -0.5, 0.25, -0.25];
+        let mut buffer = AudioBuffer::new(1, 4, vector.as_mut_slice());
 
-        processor.process(&mut slices);
+        processor.process(&mut buffer);
 
         // 期待される値: 入力 * 2.0
-        assert_eq!(channel_buffer[0], 1.0);
-        assert_eq!(channel_buffer[1], -1.0);
-        assert_eq!(channel_buffer[2], 0.5);
-        assert_eq!(channel_buffer[3], -0.5);
+        assert_eq!(vector[0], 1.0);
+        assert_eq!(vector[1], -1.0);
+        assert_eq!(vector[2], 0.5);
+        assert_eq!(vector[3], -0.5);
     }
 }

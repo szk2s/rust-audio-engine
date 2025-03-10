@@ -1,4 +1,4 @@
-use crate::audio_graph::AudioGraphNode;
+use crate::{audio_buffer::AudioBuffer, audio_graph::AudioGraphNode};
 
 /// サイン波を生成するプロセッサー
 pub struct SineGenerator {
@@ -48,14 +48,14 @@ impl AudioGraphNode for SineGenerator {
         self.sample_rate = sample_rate;
     }
 
-    fn process(&mut self, buffer: &mut [&mut [f32]]) {
-        let num_channels = buffer.len();
-        let num_samples = buffer[0].len();
+    fn process(&mut self, buffer: &mut AudioBuffer) {
+        let num_channels = buffer.num_channels();
+        let num_samples = buffer.num_samples();
         for i in 0..num_samples {
             let val = self.calculate_sine();
             // サイン波を生成
             for ch in 0..num_channels {
-                buffer[ch][i] = val;
+                buffer.get_mutable_channel_buffer(ch)[i] = val;
             }
         }
     }
@@ -73,17 +73,17 @@ mod tests {
     fn test_sine_generator() {
         let mut generator = SineGenerator::new(); // 1Hz
         generator.set_frequency(1.0);
-        let mut buffer: Vec<f32> = vec![0.0; 4];
-        let mut slices: Vec<&mut [f32]> = vec![buffer.as_mut_slice()];
+        let mut vector: Vec<f32> = vec![0.0; 4];
+        let mut buffer = AudioBuffer::new(1, 4, vector.as_mut_slice());
 
         // サンプルレート4Hzで1秒分を生成
         generator.prepare(4.0, 4);
-        generator.process(&mut slices);
+        generator.process(&mut buffer);
 
         // 期待される値: 0, 1, 0, -1（1Hzのサイン波、サンプルレート4Hzの場合）
-        assert!(buffer[0].abs() < 1e-6); // sin(0) = 0
-        assert!((buffer[1] - 1.0).abs() < 1e-6); // sin(π/2) = 1
-        assert!(buffer[2].abs() < 1e-6); // sin(π) = 0
-        assert!((buffer[3] + 1.0).abs() < 1e-6); // sin(3π/2) = -1
+        assert!(vector[0].abs() < 1e-6); // sin(0) = 0
+        assert!((vector[1] - 1.0).abs() < 1e-6); // sin(π/2) = 1
+        assert!(vector[2].abs() < 1e-6); // sin(π) = 0
+        assert!((vector[3] + 1.0).abs() < 1e-6); // sin(3π/2) = -1
     }
 }
