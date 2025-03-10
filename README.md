@@ -1,6 +1,6 @@
 # Rust Audio Engine
 
-Rust implementation of NovoNotes AudioEngine API (WIP)
+Rust implementation of audio engine
 
 ## Building
 
