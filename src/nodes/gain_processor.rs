@@ -1,3 +1,4 @@
+use crate::audio_buffer::AudioBuffer;
 use crate::audio_graph::AudioGraphNode;
 
 /// ゲインを処理するプロセッサー
@@ -23,11 +24,14 @@ impl AudioGraphNode for GainProcessor {
         // 何もしない。
     }
 
-    fn process(&mut self, buffer: &mut [&mut [f32]]) {
+    fn process(&mut self, buffer: &mut AudioBuffer) {
         // 入力があれば、ゲインを適用して出力に書き込む
-        for ch in 0..buffer.len() {
-            for i in 0..buffer[ch].len() {
-                buffer[ch][i] = buffer[ch][i] * self.gain;
+        let num_channels = buffer.channels();
+        let num_samples = buffer.samples();
+
+        for samples in buffer.iter_samples() {
+            for sample in samples {
+                *sample *= self.gain;
             }
         }
     }
@@ -44,10 +48,18 @@ mod tests {
     fn test_gain_processor() {
         let mut processor = GainProcessor::new();
         processor.set_gain(2.0);
+        let mut buffer = AudioBuffer::default();
         let mut channel_buffer: Vec<f32> = vec![0.5, -0.5, 0.25, -0.25];
-        let mut slices: Vec<&mut [f32]> = vec![channel_buffer.as_mut_slice()];
 
-        processor.process(&mut slices);
+        // AudioBuffer に変換して渡す
+        unsafe {
+            buffer.set_slices(channel_buffer.len(), |slices| {
+                slices.clear();
+                slices.push(channel_buffer.as_mut_slice());
+            });
+        }
+
+        processor.process(&mut buffer);
 
         // 期待される値: 入力 * 2.0
         assert_eq!(channel_buffer[0], 1.0);

@@ -1,3 +1,4 @@
+use crate::audio_buffer::AudioBuffer;
 use crate::audio_graph::AudioGraphNode;
 
 /// ノコギリ波を生成するプロセッサー
@@ -48,14 +49,19 @@ impl AudioGraphNode for SawGenerator {
         self.sample_rate = sample_rate;
     }
 
-    fn process(&mut self, buffer: &mut [&mut [f32]]) {
-        let num_channels = buffer.len();
-        let num_samples = buffer[0].len();
+    fn process(&mut self, buffer: &mut AudioBuffer) {
+        let num_channels = buffer.channels();
+        let num_samples = buffer.samples();
+
+        if num_channels == 0 || num_samples == 0 {
+            return;
+        }
+
         for i in 0..num_samples {
             let val = self.calculate_saw();
             // ノコギリ波を各チャンネルに出力
-            for ch in 0..num_channels {
-                buffer[ch][i] = val;
+            for (ch_idx, channel) in buffer.as_slice().iter_mut().enumerate() {
+                channel[i] = val;
             }
         }
     }
@@ -73,17 +79,25 @@ mod tests {
     fn test_saw_generator() {
         let mut generator = SawGenerator::new();
         generator.set_frequency(1.0); // 1Hz
-        let mut buffer: Vec<f32> = vec![0.0; 4];
-        let mut slices: Vec<&mut [f32]> = vec![buffer.as_mut_slice()];
+        let mut buffer = AudioBuffer::default();
+        let mut channel_buffer: Vec<f32> = vec![0.0; 4];
+
+        // AudioBuffer に変換して渡す
+        unsafe {
+            buffer.set_slices(channel_buffer.len(), |slices| {
+                slices.clear();
+                slices.push(channel_buffer.as_mut_slice());
+            });
+        }
 
         // サンプルレート4Hzで1秒分を生成
         generator.prepare(4.0, 4);
-        generator.process(&mut slices);
+        generator.process(&mut buffer);
 
         // 期待される値: -1, -0.5, 0, 0.5（1Hzのノコギリ波、サンプルレート4Hzの場合）
-        assert!((buffer[0] + 1.0).abs() < 1e-6); // -1
-        assert!((buffer[1] + 0.5).abs() < 1e-6); // -0.5
-        assert!(buffer[2].abs() < 1e-6); // 0
-        assert!((buffer[3] - 0.5).abs() < 1e-6); // 0.5
+        assert!((channel_buffer[0] + 1.0).abs() < 1e-6); // -1
+        assert!((channel_buffer[1] + 0.5).abs() < 1e-6); // -0.5
+        assert!(channel_buffer[2].abs() < 1e-6); // 0
+        assert!((channel_buffer[3] - 0.5).abs() < 1e-6); // 0.5
     }
 }

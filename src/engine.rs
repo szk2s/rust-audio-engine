@@ -1,12 +1,14 @@
 use nih_plug::prelude::*;
 use std::sync::Arc;
 
+use crate::audio_buffer::AudioBuffer;
 use crate::audio_graph::AudioGraph;
 use crate::nodes::{GainProcessor, SawGenerator, SineGenerator};
 // メインのプラグイン実装
 pub struct RustAudioEngine {
     params: Arc<RustAudioEngineParams>,
     audio_graph: AudioGraph,
+    audio_buffer: AudioBuffer<'static>,
 }
 
 #[derive(Params)]
@@ -25,6 +27,7 @@ impl Default for RustAudioEngine {
         Self {
             params: Arc::new(RustAudioEngineParams::default()),
             audio_graph: AudioGraph::new(),
+            audio_buffer: AudioBuffer::default(),
         }
     }
 }
@@ -102,6 +105,19 @@ impl Plugin for RustAudioEngine {
         self.reset();
 
         let sample_rate = buffer_config.sample_rate;
+
+        // ここで処理用のAudioBufferを作成・初期化
+        // フィールドとして保持するため、RustAudioEngineに audio_buffer フィールドを追加する必要があります
+        let max_channels = 2; // ステレオを想定
+        unsafe {
+            self.audio_buffer.set_slices(0, |slices| {
+                slices.clear();
+                // 十分なキャパシティを確保
+                slices.reserve(max_channels);
+            });
+        }
+
+        // グラフを準備
         self.audio_graph
             .prepare(sample_rate, buffer_config.max_buffer_size as usize);
 
@@ -152,11 +168,32 @@ impl Plugin for RustAudioEngine {
         _aux: &mut AuxiliaryBuffers,
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // 現在のチャンネルの &mut [f32] バッファを取得
         let raw_buffer = buffer.as_slice();
 
+        // initialize済みのバッファを再利用（メモリアロケーションなし）
+        unsafe {
+            self.audio_buffer.set_slices(raw_buffer[0].len(), |slices| {
+                // キャパシティ内で操作（アロケーションなし）
+                let channels = raw_buffer.len();
+
+                // 既存のスライスを更新
+                for i in 0..channels {
+                    if i < slices.len() {
+                        slices[i] = raw_buffer[i];
+                    } else if i < slices.capacity() {
+                        slices.push(raw_buffer[i]);
+                    }
+                }
+
+                // チャンネル数が減った場合はスライスを切り詰め
+                if slices.len() > channels {
+                    slices.truncate(channels);
+                }
+            });
+        }
+
         // プロセッサーチェーンを処理（サイン波生成 → ゲイン処理）
-        self.audio_graph.process(raw_buffer);
+        self.audio_graph.process(&mut self.audio_buffer);
 
         ProcessStatus::Normal
     }
