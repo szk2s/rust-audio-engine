@@ -5,13 +5,14 @@
 
 extern crate portaudio;
 
+use audio_engine_core::audio_buffer::AudioBuffer;
+use audio_engine_core::audio_graph::AudioGraph;
+use audio_engine_core::nodes::SineGenerator;
 use portaudio as pa;
 
 // 定数定義：サンプルレート、フレーム数、チャネル数の設定
 const SAMPLE_RATE: f64 = 44_100.0;
 const FRAMES: u32 = 256;
-const INPUT_CHANNELS: i32 = 1; // 入力デバイスは1ch
-const OUTPUT_CHANNELS: i32 = 2; // 出力デバイスは2ch
 const INTERLEAVED: bool = true;
 
 fn main() {
@@ -38,71 +39,90 @@ fn run() -> Result<(), pa::Error> {
     let input_info = pa.device_info(def_input)?;
     println!("デフォルト入力デバイス情報: {:#?}", &input_info);
 
-    // 入力ストリームのパラメータを構築（入力は1ch）
+    let num_input_channels = input_info.max_input_channels;
+
+    // 入力ストリームのパラメータを構築
     let input_latency = input_info.default_low_input_latency;
     let input_params =
-        pa::StreamParameters::<f32>::new(def_input, INPUT_CHANNELS, INTERLEAVED, input_latency);
+        pa::StreamParameters::<f32>::new(def_input, num_input_channels, INTERLEAVED, input_latency);
 
     let def_output = pa.default_output_device()?;
     let output_info = pa.device_info(def_output)?;
     println!("デフォルト出力デバイス情報: {:#?}", &output_info);
 
-    // 出力ストリームのパラメータを構築（出力は2ch）
+    let num_output_channels = output_info.max_output_channels;
+
+    // 出力ストリームのパラメータを構築
     let output_latency = output_info.default_low_output_latency;
     let output_params =
-        pa::StreamParameters::new(def_output, OUTPUT_CHANNELS, INTERLEAVED, output_latency);
+        pa::StreamParameters::new(def_output, num_output_channels, INTERLEAVED, output_latency);
 
     // 入力と出力のフォーマットがサポートされているか確認する
     let result = pa.is_duplex_format_supported(input_params, output_params, SAMPLE_RATE);
     println!("デュプレックスフォーマットサポート確認: {:?}", result);
-    if result.is_err() {
-        println!("エラー: {:?}", result.err());
-        return Err(result.err().unwrap());
-    }
+    result?;
 
     // デュプレックスストリームの設定を構築
     let settings = pa::DuplexStreamSettings::new(input_params, output_params, SAMPLE_RATE, FRAMES);
 
-    // カウントダウンが0になったらストリームを閉じる
-    let mut count_down = 3.0;
+    let mut audio_graph = AudioGraph::new();
 
-    // 前回の現在時刻を保持してデルタタイムを計算
-    let mut maybe_last_time = None;
+    // AudioGraph にノードを追加
+    {
+        let mut sine_generator1 = SineGenerator::new();
+        let mut sine_generator2 = SineGenerator::new();
+        sine_generator1.set_frequency(220.0);
+        sine_generator2.set_frequency(523.25);
+        let node_id_s1 = audio_graph.add_node(Box::new(sine_generator1));
+        let node_id_s2 = audio_graph.add_node(Box::new(sine_generator2));
+        let node_id_in = audio_graph.get_input_node_id();
+        let node_id_out = audio_graph.get_output_node_id();
 
-    // メインスレッドにカウントダウン値を送信するためのチャネル
-    let (sender, receiver) = ::std::sync::mpsc::channel();
+        let result = audio_graph.add_edge(node_id_in, node_id_s1);
+        if result.is_err() {
+            eprintln!("エッジの追加に失敗しました: {:?}", result);
+        }
+        let result = audio_graph.add_edge(node_id_in, node_id_s2);
+        if result.is_err() {
+            eprintln!("エッジの追加に失敗しました: {:?}", result);
+        }
+        let result = audio_graph.add_edge(node_id_s1, node_id_out);
+        if result.is_err() {
+            eprintln!("エッジの追加に失敗しました: {:?}", result);
+        }
+        let result = audio_graph.add_edge(node_id_s2, node_id_out);
+        if result.is_err() {
+            eprintln!("エッジの追加に失敗しました: {:?}", result);
+        }
+    }
+
+    audio_graph.prepare(SAMPLE_RATE as f32, FRAMES as usize);
 
     // ノンブロッキングストリーム用のコールバック
     let callback = move |pa::DuplexStreamCallbackArgs {
                              in_buffer,
                              out_buffer,
                              frames,
-                             time,
                              ..
                          }| {
-        let current_time = time.current;
-        let prev_time = maybe_last_time.unwrap_or(current_time);
-        let dt = current_time - prev_time;
-        count_down -= dt;
-        maybe_last_time = Some(current_time);
-
         // フレーム数が期待通りであることを確認
         assert!(frames == FRAMES as usize);
-        sender.send(count_down).ok();
 
-        // 各フレーム毎に処理を行う:
-        // - 入力信号のサンプルを出力の1ch目に転送
-        // - 出力の2ch目は0で埋める
+        // 出力バッファを0で埋める
+        out_buffer.fill(0.0);
+
+        // 入力信号を out_buffer にコピー
         for frame in 0..frames {
-            out_buffer[frame * 2] = in_buffer[frame];
-            out_buffer[frame * 2 + 1] = 0.0;
+            for ch in 0..num_output_channels as usize {
+                out_buffer[frame * num_output_channels as usize + ch] = in_buffer[frame];
+            }
         }
 
-        if count_down > 0.0 {
-            pa::Continue
-        } else {
-            pa::Complete
-        }
+        // out_buffer を AudioGraph に渡す。
+        let mut audio_buffer = AudioBuffer::new(num_output_channels as usize, frames, out_buffer);
+        audio_graph.process(&mut audio_buffer);
+
+        pa::Continue
     };
 
     // f32型の入力と出力を持つノンブロッキングストリームを構築
@@ -110,15 +130,7 @@ fn run() -> Result<(), pa::Error> {
 
     stream.start()?;
 
-    // ノンブロッキングストリームがアクティブな間ループする
-    while stream.is_active()? {
-        // 送信されたカウントダウン値を表示する
-        while let Ok(count_down) = receiver.try_recv() {
-            println!("カウントダウン: {:?}", count_down);
-        }
+    loop {
+        stream.is_active()?;
     }
-
-    stream.stop()?;
-
-    Ok(())
 }

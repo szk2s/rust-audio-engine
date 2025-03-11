@@ -75,12 +75,12 @@ impl AudioGraph {
             graph,
             next_node_id: 2, // 次に割り当てるIDは2から
             sample_rate: 44100.0,
-            max_buffer_size: 512,
+            max_buffer_size: 0,
             input_node_id,
             output_node_id,
             node_outputs: HashMap::new(),
             tmp_input_buffer: Vec::new(),
-            num_channels: 0,
+            num_channels: 2, // 現在、2ch のみのサポート。
         }
     }
 
@@ -111,9 +111,6 @@ impl AudioGraph {
     pub fn prepare(&mut self, sample_rate: f32, max_buffer_size: usize) {
         self.sample_rate = sample_rate;
         self.max_buffer_size = max_buffer_size;
-
-        // デフォルトでステレオ（2チャンネル）を想定
-        self.num_channels = 2;
 
         // ノード出力バッファを事前に確保
         self.node_outputs.clear();
@@ -211,15 +208,27 @@ impl AudioGraph {
     pub fn process(&mut self, buffer: &mut AudioBuffer) {
         let num_channels = buffer.num_channels();
         if num_channels == 0 {
+            debug_assert!(false, "チャンネル数が0です。");
             return;
         }
 
         // 処理中のチャンネル数が変わった場合のハンドリングは未実装。
         if num_channels != self.num_channels {
+            debug_assert!(
+                false,
+                "チャンネル数が変わっています。現在 2ch のみのサポート。"
+            );
             return;
         }
 
         let buffer_size = buffer.num_frames();
+        if buffer_size > self.max_buffer_size {
+            debug_assert!(
+                false,
+                "process 関数に渡されたバッファーが prepare 関数で指定された最大バッファーサイズを超えています。"
+            );
+        }
+
         let graph = self.graph.get_real_time_safe_interface();
 
         // 各ノードのバッファをクリア

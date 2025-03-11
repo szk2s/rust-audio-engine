@@ -77,6 +77,7 @@ dependencies = [
 name = "audio_engine_service"
 version = "0.1.0"
 dependencies = [
+ "audio_engine_core",
  "portaudio",
 ]
 

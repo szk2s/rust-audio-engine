@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 portaudio = "0.8.0"
+audio_engine_core = { path = "../audio_engine_core" }
