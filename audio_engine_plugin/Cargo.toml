@@ -1,0 +1,16 @@
+[package]
+name = "audio_engine_plugin"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your@email.com>"]
+license = "MIT"
+homepage = "https://github.com/szk2s/rust-audio-engine"
+description = "Rust Audio Engine as a CLAP plugin"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", default-features = false, features = [
+    "assert_process_allocs",
+] }

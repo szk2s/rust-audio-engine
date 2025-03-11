@@ -132,14 +132,14 @@ impl Plugin for RustAudioEngine {
         {
             // パラメーターからサイン波ジェネレーターの周波数を更新
             // let frequency = self.params.frequency.smoothed.next();
-            sine_generator.set_frequency(220.0);
+            sine_generator.set_frequency(523.25);
 
             // パラメーターからゲインプロセッサーのゲインを更新
-            let gain = self.params.gain.smoothed.next();
-            gain_processor.set_gain(gain);
+            // let gain = self.params.gain.smoothed.next();
+            gain_processor.set_gain(0.5);
 
             // パラメーターからノコギリ波ジェネレーターの周波数を更新
-            saw_generator.set_frequency(523.25);
+            saw_generator.set_frequency(220.0);
         }
 
         // ノードをグラフに追加

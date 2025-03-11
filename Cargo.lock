@@ -62,6 +62,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "audio_engine_plugin"
+version = "0.1.0"
+dependencies = [
+ "nih_plug",
+]
+
+[[package]]
 name = "audio_engine_service"
 version = "0.1.0"
 dependencies = [
@@ -607,9 +614,6 @@ dependencies = [
 [[package]]
 name = "rust_audio_engine"
 version = "0.1.0"
-dependencies = [
- "nih_plug",
-]
 
 [[package]]
 name = "rustc-demangle"

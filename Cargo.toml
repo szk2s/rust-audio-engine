@@ -5,18 +5,12 @@ edition = "2021"
 authors = ["Your Name <your@email.com>"]
 license = "MIT"
 homepage = "https://github.com/szk2s/rust-audio-engine"
-description = "Rust implementation of NovoNotes AudioEngine API (WIP)"
+description = "Rust implementation of audio engine"
 
 [workspace]
-members = ["xtask", "audio_engine_service"]
+members = ["xtask", "audio_engine_service", "audio_engine_plugin"]
 
 [lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", default-features = false, features = [
-    "assert_process_allocs",
-] }
 
 # 以下はなぜかエラーがでるのでコメントアウト、原因未調査
 # [profile.release]

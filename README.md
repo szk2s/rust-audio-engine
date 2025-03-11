@@ -7,11 +7,11 @@ Rust implementation of audio engine
 After installing [Rust](https://rustup.rs/), you can compile Rust Audio Engine as follows:
 
 ```shell
-cargo xtask bundle rust_audio_engine --release
+./build_and_install.sh
 ```
 
 ## Testing
 
 ```shell
-cargo test
+cargo test --workspace
 ```
