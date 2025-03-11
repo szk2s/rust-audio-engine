@@ -308,6 +308,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "audio_engine_cdylib"
+version = "0.1.0"
+dependencies = [
+ "audio_engine_service",
+]
+
+[[package]]
 name = "audio_engine_core"
 version = "0.1.0"
 

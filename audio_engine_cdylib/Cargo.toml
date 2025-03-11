@@ -1,0 +1,10 @@
+[package]
+name = "audio_engine_cdylib"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+audio_engine_service = { path = "../audio_engine_service" }
