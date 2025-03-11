@@ -5,9 +5,9 @@
 
 extern crate portaudio;
 
-use audio_engine_service::init;
+use audio_engine_service::service;
 
 fn main() {
-    init();
+    service::init();
     loop {}
 }
