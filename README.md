@@ -1,6 +1,6 @@
 # Rust Audio Engine
 
-Rust implementation of audio engine
+Rust implementation of audio engine for pro audio apps like DAWs.
 
 ## Prerequisites
 
