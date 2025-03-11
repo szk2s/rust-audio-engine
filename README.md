@@ -2,6 +2,16 @@
 
 Rust implementation of audio engine
 
+## Prerequisites
+
+portaudio のインストールが必要かもしれない。プラットフォームによっては、rust-portaudio が自動でインストールするのかも。
+
+macOS の場合:
+
+```shell
+brew install portaudio
+```
+
 ## Building
 
 After installing [Rust](https://rustup.rs/), you can compile Rust Audio Engine as follows:
