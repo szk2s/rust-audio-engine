@@ -13,8 +13,8 @@ members = [
     "audio_engine_service",
     "audio_engine_plugin",
     "audio_engine_core",
-    "example_app_flutter/rust",
-    "example_app_tauri/src-tauri", "audio_engine_cdylib",
+    "example_app_tauri/src-tauri",
+    "audio_engine_cdylib",
 ]
 
 [lib]
