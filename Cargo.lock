@@ -1028,6 +1028,7 @@ version = "0.1.0"
 name = "rust_lib_example_app_flutter"
 version = "0.1.0"
 dependencies = [
+ "audio_engine_service",
  "flutter_rust_bridge",
 ]
 
