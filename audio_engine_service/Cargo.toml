@@ -1,0 +1,7 @@
+[package]
+name = "audio_engine_service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+portaudio = "0.8.0"
