@@ -62,9 +62,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "audio_engine_core"
+version = "0.1.0"
+
+[[package]]
 name = "audio_engine_plugin"
 version = "0.1.0"
 dependencies = [
+ "audio_engine_core",
  "nih_plug",
 ]
 

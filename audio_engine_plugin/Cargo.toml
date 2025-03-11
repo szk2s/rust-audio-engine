@@ -14,3 +14,4 @@ crate-type = ["cdylib"]
 nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", default-features = false, features = [
     "assert_process_allocs",
 ] }
+audio_engine_core = { path = "../audio_engine_core" }

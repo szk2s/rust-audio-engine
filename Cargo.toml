@@ -8,7 +8,7 @@ homepage = "https://github.com/szk2s/rust-audio-engine"
 description = "Rust implementation of audio engine"
 
 [workspace]
-members = ["xtask", "audio_engine_service", "audio_engine_plugin"]
+members = ["xtask", "audio_engine_service", "audio_engine_plugin", "audio_engine_core"]
 
 [lib]
 

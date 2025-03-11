@@ -1,9 +1,9 @@
 use nih_plug::prelude::*;
 use std::sync::Arc;
 
-use crate::audio_buffer::AudioBuffer;
-use crate::audio_graph::AudioGraph;
-use crate::nodes::{GainProcessor, SawGenerator, SineGenerator};
+use audio_engine_core::audio_buffer::AudioBuffer;
+use audio_engine_core::audio_graph::AudioGraph;
+use audio_engine_core::nodes::{GainProcessor, SawGenerator, SineGenerator};
 // メインのプラグイン実装
 pub struct RustAudioEngine {
     params: Arc<RustAudioEngineParams>,
