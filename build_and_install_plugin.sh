@@ -8,9 +8,6 @@ set -e
 # 未定義の変数を使用した場合にエラー
 set -u
 
-# サービスのビルド
-cargo build --package audio_engine_service || { echo "エラー: サービスのビルドに失敗しました"; exit 1; }
-
 # プラグインのビルド
 
 echo "プラグインをビルドしています..."
