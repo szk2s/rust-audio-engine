@@ -25,3 +25,25 @@ After installing [Rust](https://rustup.rs/), you can compile Rust Audio Engine a
 ```shell
 cargo test --workspace
 ```
+
+## Run audio_engine_service
+
+```shell
+cargo run --package audio_engine_service
+```
+
+## Run example_app_flutter
+
+```shell
+cd example_app_flutter
+flutter run
+```
+
+例えば macOS で動かしたい場合は、`flutter run -d macos` とする。
+
+## Run example_app_tauri
+
+```shell
+cd example_app_tauri
+bun tauri dev
+```

@@ -8,7 +8,9 @@ extern crate portaudio;
 use audio_engine_core::audio_buffer::AudioBuffer;
 use audio_engine_core::audio_graph::AudioGraph;
 use audio_engine_core::nodes::SineGenerator;
+use once_cell::sync::Lazy;
 use portaudio as pa;
+use std::sync::Mutex;
 
 // 定数定義：サンプルレート、フレーム数、チャネル数の設定
 const SAMPLE_RATE: f64 = 44_100.0;
@@ -130,5 +132,18 @@ fn internal_init() -> Result<(), pa::Error> {
 
     stream.start()?;
 
+    println!("Stream started");
+
+    // ★ stream をグローバル変数に保持して、
+    // 関数終了後も破棄されないようにする。
+    {
+        let mut stream_guard = GLOBAL_STREAM.lock().unwrap();
+        *stream_guard = Some(stream);
+    }
+
     Ok(())
 }
+
+/// グローバル変数：音声ストリームを保持する変数です。プログラムの実行中ずっと有効です。
+static GLOBAL_STREAM: Lazy<Mutex<Option<pa::Stream<pa::NonBlocking, pa::Duplex<f32, f32>>>>> =
+    Lazy::new(|| Mutex::new(None));

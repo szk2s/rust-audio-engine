@@ -14,6 +14,7 @@ members = [
     "audio_engine_plugin",
     "audio_engine_core",
     "example_app_flutter/rust",
+    "example_app_tauri/src-tauri",
 ]
 
 [lib]
