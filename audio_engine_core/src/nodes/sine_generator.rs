@@ -50,12 +50,12 @@ impl AudioGraphNode for SineGenerator {
 
     fn process(&mut self, buffer: &mut AudioBuffer) {
         let num_channels = buffer.num_channels();
-        let num_samples = buffer.num_samples();
+        let num_samples = buffer.num_frames();
         for i in 0..num_samples {
             let val = self.calculate_sine();
             // サイン波を生成
             for ch in 0..num_channels {
-                buffer.get_mutable_channel_buffer(ch)[i] = val;
+                buffer.get_mut_frame(i)[ch] = val;
             }
         }
     }

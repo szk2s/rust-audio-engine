@@ -219,7 +219,7 @@ impl AudioGraph {
             return;
         }
 
-        let buffer_size = buffer.num_samples();
+        let buffer_size = buffer.num_frames();
         let graph = self.graph.get_real_time_safe_interface();
 
         // 各ノードのバッファをクリア
@@ -406,7 +406,7 @@ mod tests {
 
         fn process(&mut self, buffer: &mut AudioBuffer) {
             // すべてのサンプルの値を value にします。
-            for sample in buffer.to_mutable_slice() {
+            for sample in buffer.as_mut_slice() {
                 *sample = self.value;
             }
         }
@@ -477,7 +477,7 @@ mod tests {
         graph.process(&mut audio_buffer);
 
         // トポロジカル順序で処理されるため、node1とnode2の両方が適用されるはず
-        for sample in audio_buffer.to_immutable_slice() {
+        for sample in audio_buffer.as_slice() {
             // 最後のノードの値になるはず。
             assert_eq!(*sample, 0.3);
         }
@@ -516,7 +516,7 @@ mod tests {
         graph.process(&mut audio_buffer);
 
         // node1とnode2のが合流するので両方が適用されるはず
-        for sample in audio_buffer.to_immutable_slice() {
+        for sample in audio_buffer.as_slice() {
             // 0.5 + 0.3 = 0.8
             assert_eq!(*sample, 0.8);
         }

@@ -180,17 +180,19 @@ impl Plugin for RustAudioEngine {
             AudioBuffer::new(self.num_channels, self.num_samples, &mut self.tmp_buffer);
 
         // 引数のバッファをオーディオバッファへコピー
-        for ch in 0..self.num_channels {
-            audio_buffer.copy_channel_buffer(ch, &buffer.as_slice_immutable()[ch]);
+        for (frame_idx, frame) in buffer.iter_samples().enumerate() {
+            for (ch, sample) in frame.into_iter().enumerate() {
+                audio_buffer.get_mut_frame(frame_idx)[ch] = *sample;
+            }
         }
 
         // プロセッサーチェーンを処理（サイン波生成 → ゲイン処理）
         self.audio_graph.process(&mut audio_buffer);
 
         // 引数のバッファへ書き戻し
-        for ch in 0..self.num_channels {
-            for i in 0..self.num_samples {
-                buffer.as_slice()[ch][i] = audio_buffer.get_channel_buffer(ch)[i];
+        for (frame_idx, frame) in buffer.iter_samples().enumerate() {
+            for (ch, sample) in frame.into_iter().enumerate() {
+                *sample = audio_buffer.get_frame(frame_idx)[ch];
             }
         }
 

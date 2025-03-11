@@ -9,8 +9,8 @@ use crate::audio_buffer::AudioBuffer;
 /// # リアルタイム安全性
 /// * この関数はメモリ割り当てを行わないためリアルタイム安全です。
 pub fn copy_buffer(src_buffer: &AudioBuffer, dst_buffer: &mut AudioBuffer) {
-    let src_slice = src_buffer.to_immutable_slice();
-    let dst_slice = dst_buffer.to_mutable_slice();
+    let src_slice = src_buffer.as_slice();
+    let dst_slice = dst_buffer.as_mut_slice();
     dst_slice.copy_from_slice(src_slice);
 }
 
@@ -23,8 +23,8 @@ pub fn copy_buffer(src_buffer: &AudioBuffer, dst_buffer: &mut AudioBuffer) {
 /// # リアルタイム安全性
 /// * この関数はメモリ割り当てを行わないためリアルタイム安全です。
 pub fn add_buffer(src_buffer: &AudioBuffer, dst_buffer: &mut AudioBuffer) {
-    let src_slice = src_buffer.to_immutable_slice();
-    let dst_slice = dst_buffer.to_mutable_slice();
+    let src_slice = src_buffer.as_slice();
+    let dst_slice = dst_buffer.as_mut_slice();
     for (i, samp) in src_slice.iter().enumerate() {
         if i < dst_slice.len() {
             dst_slice[i] += samp;
@@ -40,7 +40,7 @@ pub fn add_buffer(src_buffer: &AudioBuffer, dst_buffer: &mut AudioBuffer) {
 /// # リアルタイム安全性
 /// * この関数はメモリ割り当てを行わないためリアルタイム安全です。
 pub fn clear_buffer(buffer: &mut AudioBuffer) {
-    let slice = buffer.to_mutable_slice();
+    let slice = buffer.as_mut_slice();
     slice.fill(0.0);
 }
 

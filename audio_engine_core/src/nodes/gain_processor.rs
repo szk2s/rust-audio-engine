@@ -25,7 +25,7 @@ impl AudioGraphNode for GainProcessor {
 
     fn process(&mut self, buffer: &mut AudioBuffer) {
         // 入力があれば、ゲインを適用して出力に書き込む
-        for sample in buffer.to_mutable_slice() {
+        for sample in buffer.as_mut_slice() {
             *sample = *sample * self.gain;
         }
     }
