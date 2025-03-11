@@ -18,11 +18,12 @@ nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", default-featur
     "assert_process_allocs",
 ] }
 
-[profile.release]
-lto = "thin"
-strip = "symbols"
+# 以下はなぜかエラーがでるのでコメントアウト、原因未調査
+# [profile.release]
+# lto = "thin"
+# strip = "symbols"
 
-[profile.profiling]
-inherits = "release"
-debug = true
-strip = "none"
+# [profile.profiling]
+# inherits = "release"
+# debug = true
+# strip = "none"
