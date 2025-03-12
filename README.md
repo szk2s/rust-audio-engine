@@ -4,12 +4,12 @@ Rust で実装されたオーディオエンジン。DAW などのプロオー�
 
 ## 各クレートの概要
 
-- audio_engine_cdylib: audio_engine_service を他言語から利用するための C API の定義。example_app_flutter を動かすのに必要。
-- audio_engine_core: Audio Graph などのコアのロジック・モデルの実装。
-- audio_engine_plugin: audio_engine_core と nih_plug の統合。CLAP プラグインをビルドできる。
-- audio_engine_service: audio_engine_core とオーディオデバイスを繋ぎ込み、音が鳴るようにしたサービス。スタンドアローンとして実行可能。
-- example_app_flutter: audio_engine_cdylib を Flutter に統合する例。
-- example_app_tauri: audio_engine_service を Tauri に統合する例。
+- **audio_engine_cdylib**: audio_engine_service を他言語から利用するための C API の定義。example_app_flutter を動かすのに必要。
+- **audio_engine_core**: Audio Graph などのコアのロジック・モデルの実装。
+- **audio_engine_plugin**: audio_engine_core と nih_plug の統合。CLAP プラグインをビルドできる。
+- **audio_engine_service**: audio_engine_core とオーディオデバイスを繋ぎ込み、音が鳴るようにしたサービス。スタンドアローンとして実行可能。
+- **example_app_flutter**: audio_engine_cdylib を Flutter に統合する例。
+- **example_app_tauri**: audio_engine_service を Tauri に統合する例。
 
 ## Prerequisites
 
@@ -93,15 +93,21 @@ bun tauri dev
 
 ## 未実装の機能
 
+代表的な未実装機能のリストです。プロオーディオアプリケーションを構築するのに必要な機能は、他にもあると思います。
+
+### イベントシーケンス
+
+オーディオリージョンや MIDI クリップをタイムライン上に配置して再生する機能。
+
 ### プラグインホスト
 
 CLAP をホストできるようにしたい。
 この辺りが参考になりそう。
 https://github.com/prokopyl/clack/tree/main/host/examples/cpal
 
-### イベントシーケンス
-
-オーディオリージョンや MIDI クリップをタイムライン上に配置して再生する機能。
+example_app_flutter の対応:
+現状 audio_engine_service::init を dart の ui スレッドから呼び出しているが、
+CLAP の GUI 表示をサポートするにはプラットフォームのメインスレッドから呼び出すように変更が必要そう。
 
 ### MIDI IO
 
@@ -110,4 +116,5 @@ https://github.com/Boddlnagg/midir
 
 ### iOS サポート
 
-おそらく portaudio を動かすのが難しいので、AudioToolbox などを使って AudioIO を繋ぎこむ方針がいいのかも。要調査。
+iOS では portaudio を動かすのが難しいかもしれない（未確認）。
+その場合、AudioToolbox などを使って AudioIO と audio_engine_core を繋ぎこむ方針の方がいいのかも。
