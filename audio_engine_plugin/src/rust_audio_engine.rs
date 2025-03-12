@@ -202,8 +202,7 @@ impl Plugin for RustAudioEngine {
 
 impl ClapPlugin for RustAudioEngine {
     const CLAP_ID: &'static str = "com.your-domain.rust-audio-engine";
-    const CLAP_DESCRIPTION: Option<&'static str> =
-        Some("Rust実装のオーディオエンジンAPI（開発中）");
+    const CLAP_DESCRIPTION: Option<&'static str> = Some("Rust Implementation of Audio Engine");
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
 

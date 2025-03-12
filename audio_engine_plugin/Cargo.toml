@@ -15,3 +15,12 @@ nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", default-featur
     "assert_process_allocs",
 ] }
 audio_engine_core = { path = "../audio_engine_core" }
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = "none"

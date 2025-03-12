@@ -13,7 +13,10 @@ Rust で実装されたオーディオエンジン。DAW などのプロオー�
 
 ## Prerequisites
 
+### portaudio のインストール
+
 このプロジェクトは audio_engine_service クレートが portaudio のライブラリに依存しています。
+（ただし、audio_engine_plugin は依存していないので、それだけ動かしたい方は、このセクションを skip して大丈夫です。）
 rust-portaudio クレートが自動で portaudio をビルド&インストールするはずなので、本来なら特に何もする必要はないはずです。
 
 ただし、MacOS の場合、2025 年 3 月時点では、この自動ビルドが失敗するようです。
