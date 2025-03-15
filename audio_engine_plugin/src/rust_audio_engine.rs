@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use audio_engine_core::audio_buffer::AudioBuffer;
 use audio_engine_core::audio_graph::AudioGraph;
-use audio_engine_core::nodes::{GainProcessor, SawGenerator, SineGenerator};
+use audio_engine_core::nodes::{GainProcessor, InputNode, OutputNode, SawGenerator, SineGenerator};
 // メインのプラグイン実装
 pub struct RustAudioEngine {
     params: Arc<RustAudioEngineParams>,
@@ -11,6 +11,8 @@ pub struct RustAudioEngine {
     tmp_buffer: Vec<f32>,
     num_channels: usize,
     num_samples: usize,
+    input_node_id: usize,
+    output_node_id: usize,
 }
 
 #[derive(Params)]
@@ -32,6 +34,8 @@ impl Default for RustAudioEngine {
             tmp_buffer: Vec::new(),
             num_channels: 0,
             num_samples: 0,
+            input_node_id: 0,
+            output_node_id: 0,
         }
     }
 }
@@ -124,10 +128,13 @@ impl Plugin for RustAudioEngine {
         self.audio_graph
             .prepare(sample_rate, buffer_config.max_buffer_size as usize);
 
-        // パラメーターをノードに反映
+        // ノードを作成
         let mut sine_generator = SineGenerator::new();
         let mut gain_processor = GainProcessor::new();
         let mut saw_generator = SawGenerator::new();
+        let input_node = InputNode::new();
+        let output_node = OutputNode::new();
+
         // パラメーターの設定
         {
             // パラメーターからサイン波ジェネレーターの周波数を更新
@@ -143,14 +150,16 @@ impl Plugin for RustAudioEngine {
         }
 
         // ノードをグラフに追加
-        let input_node_id = self.audio_graph.get_input_node_id();
-        let output_node_id = self.audio_graph.get_output_node_id();
+        self.input_node_id = self.audio_graph.add_node(Box::new(input_node));
+        self.output_node_id = self.audio_graph.add_node(Box::new(output_node));
         let sine_generator_id = self.audio_graph.add_node(Box::new(sine_generator));
         let gain_processor_id = self.audio_graph.add_node(Box::new(gain_processor));
         let saw_generator_id = self.audio_graph.add_node(Box::new(saw_generator));
 
         // グラフにエッジを追加
-        let _ = self.audio_graph.add_edge(input_node_id, sine_generator_id);
+        let _ = self
+            .audio_graph
+            .add_edge(self.input_node_id, sine_generator_id);
         let _ = self
             .audio_graph
             .add_edge(sine_generator_id, gain_processor_id);
@@ -160,7 +169,9 @@ impl Plugin for RustAudioEngine {
         let _ = self
             .audio_graph
             .add_edge(saw_generator_id, gain_processor_id);
-        let _ = self.audio_graph.add_edge(gain_processor_id, output_node_id);
+        let _ = self
+            .audio_graph
+            .add_edge(gain_processor_id, self.output_node_id);
 
         true
     }
@@ -187,7 +198,8 @@ impl Plugin for RustAudioEngine {
         }
 
         // プロセッサーチェーンを処理（サイン波生成 → ゲイン処理）
-        self.audio_graph.process(&mut audio_buffer);
+        self.audio_graph
+            .process(&mut audio_buffer, self.input_node_id, self.output_node_id);
 
         // 引数のバッファへ書き戻し
         for (frame_idx, frame) in buffer.iter_samples().enumerate() {

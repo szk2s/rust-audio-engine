@@ -39,10 +39,6 @@ pub struct AudioGraph {
     sample_rate: f32,
     /// 最大バッファサイズ
     max_buffer_size: usize,
-    /// 入力ノードのID
-    input_node_id: usize,
-    /// 出力ノードのID
-    output_node_id: usize,
     /// 各ノードの出力バッファのキャッシュ（リアルタイムセーフな処理のため）
     node_outputs: HashMap<usize, Vec<f32>>,
     /// 一時的な入力バッファ（リアルタイムセーフな処理のため）
@@ -54,50 +50,16 @@ pub struct AudioGraph {
 impl AudioGraph {
     /// 新しいオーディオグラフを作成する
     pub fn new() -> Self {
-        let mut graph = DirectedGraph::<usize>::new();
-
-        let mut nodes = HashMap::new();
-        let input_node: Box<dyn AudioGraphNode> = Box::new(InputNode::new());
-        let output_node: Box<dyn AudioGraphNode> = Box::new(OutputNode::new());
-
-        // グラフにノードを追加
-        let input_node_id = 0;
-        let output_node_id = 1;
-
-        graph.add_node(input_node_id);
-        graph.add_node(output_node_id);
-
-        nodes.insert(input_node_id, input_node);
-        nodes.insert(output_node_id, output_node);
-
         Self {
-            nodes,
-            graph,
-            next_node_id: 2, // 次に割り当てるIDは2から
+            nodes: HashMap::new(),
+            graph: DirectedGraph::<usize>::new(),
+            next_node_id: 0,
             sample_rate: 44100.0,
             max_buffer_size: 0,
-            input_node_id,
-            output_node_id,
             node_outputs: HashMap::new(),
             tmp_input_buffer: Vec::new(),
             num_channels: 2, // 現在、2ch のみのサポート。
         }
-    }
-
-    /// 入力ノードのIDを取得する
-    ///
-    /// # 戻り値
-    /// * `usize` - 入力ノードのID
-    pub fn get_input_node_id(&self) -> usize {
-        self.input_node_id
-    }
-
-    /// 出力ノードのIDを取得する
-    ///
-    /// # 戻り値
-    /// * `usize` - 出力ノードのID
-    pub fn get_output_node_id(&self) -> usize {
-        self.output_node_id
     }
 
     /// オーディオグラフのパラメータを更新する
@@ -205,29 +167,41 @@ impl AudioGraph {
     /// # 実装時の注意
     /// この関数はリアルタイムスレッドから呼び出されることを想定しています。
     /// 実装者はメモリアロケーションなどの遅延を生む処理を行わないように注意してください。
-    pub fn process(&mut self, buffer: &mut AudioBuffer) {
+    pub fn process(
+        &mut self,
+        buffer: &mut AudioBuffer,
+        input_node_id: usize,
+        output_node_id: usize,
+    ) {
         let num_channels = buffer.num_channels();
-        if num_channels == 0 {
-            debug_assert!(false, "チャンネル数が0です。");
-            return;
-        }
+        debug_assert!(
+            num_channels > 0,
+            "チャンネル数が不正です。チャンネル数は1以上である必要があります。"
+        );
 
         // 処理中のチャンネル数が変わった場合のハンドリングは未実装。
-        if num_channels != self.num_channels {
-            debug_assert!(
-                false,
-                "チャンネル数が変わっています。現在 2ch のみのサポート。"
-            );
-            return;
-        }
+        debug_assert!(
+            num_channels == self.num_channels,
+            "チャンネル数が変わっています。現在 2ch のみのサポート。"
+        );
 
         let buffer_size = buffer.num_frames();
-        if buffer_size > self.max_buffer_size {
-            debug_assert!(
-                false,
-                "process 関数に渡されたバッファーが prepare 関数で指定された最大バッファーサイズを超えています。"
-            );
-        }
+        debug_assert!(
+            buffer_size <= self.max_buffer_size,
+            "process 関数に渡されたバッファーが prepare 関数で指定された最大バッファーサイズを超えています。"
+        );
+
+        debug_assert!(
+            self.nodes.contains_key(&input_node_id),
+            "input_node_id が見つかりません。input_node_id: {}",
+            input_node_id
+        );
+
+        debug_assert!(
+            self.nodes.contains_key(&output_node_id),
+            "output_node_id が見つかりません。output_node_id: {}",
+            output_node_id
+        );
 
         let graph = self.graph.get_real_time_safe_interface();
 
@@ -254,23 +228,38 @@ impl AudioGraph {
                         AudioBuffer::new(num_channels, buffer_size, &mut input_buffer);
                     // 各チャンネル、各サンプルを加算
                     audio_buffer_utils::add_buffer(&input_buffer, &mut tmp_input_buffer);
+                } else {
+                    debug_assert!(
+                        false,
+                        "ノードの出力バッファが見つかりません。input_id: {}",
+                        input_id
+                    );
                 }
             }
 
             // 入力ノードの場合、外部入力バッファからデータをコピー
-            if node_id == self.input_node_id {
+            if node_id == input_node_id {
                 audio_buffer_utils::copy_buffer(buffer, &mut tmp_input_buffer);
             }
 
             // 現在のノードの出力バッファへの参照を取得
             let mut node_output = match self.node_outputs.get_mut(&node_id) {
                 Some(output) => output,
-                None => continue, // 出力バッファがない場合はスキップ
+                None => {
+                    debug_assert!(
+                        false,
+                        "ノードの出力バッファが見つかりません。node_id: {}",
+                        node_id
+                    );
+                    continue;
+                }
             };
 
             // 現在のノードの処理を呼び出し
             if let Some(node) = self.nodes.get_mut(&node_id) {
                 node.process(&mut tmp_input_buffer);
+            } else {
+                debug_assert!(false, "ノードが見つかりません。node_id: {}", node_id);
             }
 
             // 処理結果をノードの出力バッファにコピー
@@ -281,9 +270,16 @@ impl AudioGraph {
         }
 
         // 出力ノードの出力バッファへの参照を取得
-        let out_node_output = match self.node_outputs.get_mut(&self.output_node_id) {
+        let out_node_output = match self.node_outputs.get_mut(&output_node_id) {
             Some(output) => output,
-            None => return, // 出力バッファがない場合はスキップ
+            None => {
+                debug_assert!(
+                    false,
+                    "出力ノードが見つかりません。output_node_id: {}",
+                    output_node_id
+                );
+                return;
+            }
         };
 
         // 出力ノードの出力を外部バッファにコピー
@@ -314,11 +310,6 @@ impl AudioGraph {
     /// # 実装時の注意
     /// この関数はメインスレッドなどの非リアルタイムスレッドから呼び出されることを想定しています。
     pub fn remove_node(&mut self, node_id: usize) -> Option<Box<dyn AudioGraphNode>> {
-        // 入力ノードと出力ノードは削除できない
-        if node_id == self.input_node_id || node_id == self.output_node_id {
-            return None;
-        }
-
         // グラフからノードを削除
         if !self.graph.remove_node(node_id) {
             return None;
@@ -347,54 +338,10 @@ impl AudioGraph {
     }
 }
 
-/// 入力ノード - グラフの入力点を示すマーカーノード
-struct InputNode {}
-
-impl InputNode {
-    fn new() -> Self {
-        Self {}
-    }
-}
-
-impl AudioGraphNode for InputNode {
-    fn prepare(&mut self, _sample_rate: f32, _max_num_samples: usize) {
-        // 何もしない
-    }
-
-    fn process(&mut self, _buffer: &mut AudioBuffer) {
-        // 何もしない
-    }
-
-    fn reset(&mut self) {
-        // 何もしない
-    }
-}
-
-/// 出力ノード - グラフの出力点を示すマーカーノード
-struct OutputNode {}
-
-impl OutputNode {
-    fn new() -> Self {
-        Self {}
-    }
-}
-
-impl AudioGraphNode for OutputNode {
-    fn prepare(&mut self, _sample_rate: f32, _max_num_samples: usize) {
-        // 何もしない
-    }
-
-    fn process(&mut self, _buffer: &mut AudioBuffer) {
-        // 何もしない
-    }
-
-    fn reset(&mut self) {
-        // 何もしない
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use crate::nodes::{InputNode, OutputNode};
+
     use super::*;
 
     // テスト用のダミーノード
@@ -428,12 +375,10 @@ mod tests {
     #[test]
     fn test_add_node() {
         let mut graph = AudioGraph::new();
-        // 入力ノードと出力ノードが含まれているはず
-        assert_eq!(graph.nodes.len(), 2);
 
         let node_id = graph.add_node(Box::new(TestNode::new(0.5)));
 
-        assert_eq!(graph.nodes.len(), 3);
+        assert_eq!(graph.nodes.len(), 1);
         assert!(graph.nodes.contains_key(&node_id));
     }
 
@@ -466,10 +411,12 @@ mod tests {
     #[test]
     fn test_serial_process() {
         let mut graph = AudioGraph::new();
-        graph.prepare(44100.0, 4);
 
-        let input_node_id = graph.get_input_node_id();
-        let output_node_id = graph.get_output_node_id();
+        let input_node = InputNode::new();
+        let output_node = OutputNode::new();
+
+        let input_node_id = graph.add_node(Box::new(input_node));
+        let output_node_id = graph.add_node(Box::new(output_node));
         let node1_id = graph.add_node(Box::new(TestNode::new(0.5)));
         let node2_id = graph.add_node(Box::new(TestNode::new(0.3)));
 
@@ -479,11 +426,14 @@ mod tests {
         assert!(graph.add_edge(node1_id, node2_id).is_ok());
         assert!(graph.add_edge(node2_id, output_node_id).is_ok());
 
+        // オーディオ処理の準備
+        graph.prepare(44100.0, 4);
+
         // 2チャンネル、4サンプルのバッファを作成
         let mut buffer: Vec<f32> = vec![0.0; 8];
         let mut audio_buffer = AudioBuffer::new(2, 4, &mut buffer);
         // グラフを処理
-        graph.process(&mut audio_buffer);
+        graph.process(&mut audio_buffer, input_node_id, output_node_id);
 
         // トポロジカル順序で処理されるため、node1とnode2の両方が適用されるはず
         for sample in audio_buffer.as_slice() {
@@ -495,12 +445,14 @@ mod tests {
     #[test]
     fn test_parallel_process() {
         let mut graph = AudioGraph::new();
-        graph.prepare(44100.0, 4);
 
-        let input_node_id = graph.get_input_node_id();
+        let input_node = InputNode::new();
+        let output_node = OutputNode::new();
+
+        let input_node_id = graph.add_node(Box::new(input_node));
         let node1_id = graph.add_node(Box::new(TestNode::new(0.5)));
         let node2_id = graph.add_node(Box::new(TestNode::new(0.3)));
-        let output_node_id = graph.get_output_node_id();
+        let output_node_id = graph.add_node(Box::new(output_node));
 
         /*
         両方のノードを出力ノードに接続する（並列処理）
@@ -517,12 +469,15 @@ mod tests {
         assert!(graph.add_edge(node1_id, output_node_id).is_ok());
         assert!(graph.add_edge(node2_id, output_node_id).is_ok());
 
+        // オーディオ処理の準備
+        graph.prepare(44100.0, 4);
+
         // 2チャンネル、4サンプルのバッファを作成
         let mut buffer: Vec<f32> = vec![0.0; 2 * 4];
         let mut audio_buffer = AudioBuffer::new(2, 4, &mut buffer);
 
         // グラフを処理
-        graph.process(&mut audio_buffer);
+        graph.process(&mut audio_buffer, input_node_id, output_node_id);
 
         // node1とnode2のが合流するので両方が適用されるはず
         for sample in audio_buffer.as_slice() {

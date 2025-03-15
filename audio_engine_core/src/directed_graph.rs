@@ -17,6 +17,7 @@ where
     /// キャッシュされた逆トポロジカルソート結果
     cached_reverse_topo_sort: Vec<T>,
     /// キャッシュされた入力ノードマップ（キー: ノードID、値: そのノードに入力するノードのIDのリスト）
+    /// 要するに adjacency_list の逆引き。
     cached_input_nodes: HashMap<T, Vec<T>>,
 }
 
@@ -279,6 +280,7 @@ where
     ///
     /// # 実装時の注意
     /// この関数はメモリアロケーションを行わないため、リアルタイムスレッドから安全に呼び出すことができます。
+    #[allow(dead_code)]
     pub fn get_topological_order(&self) -> &[T] {
         &self.cached_topo_sort
     }
@@ -344,6 +346,7 @@ where
     ///
     /// # 実装時の注意
     /// この関数はメモリアロケーションを行わないため、リアルタイムスレッドから安全に呼び出すことができます。
+    #[allow(dead_code)]
     pub fn node_count(&self) -> usize {
         self.adjacency_list.len()
     }
@@ -358,6 +361,7 @@ where
     ///
     /// # 実装時の注意
     /// この関数はメモリアロケーションを行わないため、リアルタイムスレッドから安全に呼び出すことができます。
+    #[allow(dead_code)]
     pub fn contains_node(&self, node_id: T) -> bool {
         self.adjacency_list.contains_key(&node_id)
     }
@@ -394,6 +398,7 @@ where
         Self { graph }
     }
 
+    #[allow(dead_code)]
     pub fn get_topological_order(&self) -> &[T] {
         self.graph.get_topological_order()
     }
@@ -402,14 +407,17 @@ where
         self.graph.get_reverse_topological_order()
     }
 
+    #[allow(dead_code)]
     pub fn node_count(&self) -> usize {
         self.graph.node_count()
     }
 
+    #[allow(dead_code)]
     pub fn contains_node(&self, node_id: T) -> bool {
         self.graph.contains_node(node_id)
     }
 
+    #[allow(dead_code)]
     pub fn node_ids(&self) -> impl Iterator<Item = &T> {
         self.graph.node_ids()
     }

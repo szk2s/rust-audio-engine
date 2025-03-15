@@ -7,7 +7,7 @@ extern crate portaudio;
 
 use audio_engine_core::audio_buffer::AudioBuffer;
 use audio_engine_core::audio_graph::AudioGraph;
-use audio_engine_core::nodes::SineGenerator;
+use audio_engine_core::nodes::{InputNode, OutputNode, SineGenerator};
 use once_cell::sync::Lazy;
 use portaudio as pa;
 use std::sync::Mutex;
@@ -69,16 +69,22 @@ fn internal_init() -> Result<(), pa::Error> {
 
     let mut audio_graph = AudioGraph::new();
 
+    let node_id_in: usize;
+    let node_id_out: usize;
     // AudioGraph にノードを追加
     {
         let mut sine_generator1 = SineGenerator::new();
         let mut sine_generator2 = SineGenerator::new();
+        let input_node = InputNode::new();
+        let output_node = OutputNode::new();
+
         sine_generator1.set_frequency(220.0);
         sine_generator2.set_frequency(523.25);
+
+        node_id_in = audio_graph.add_node(Box::new(input_node));
+        node_id_out = audio_graph.add_node(Box::new(output_node));
         let node_id_s1 = audio_graph.add_node(Box::new(sine_generator1));
         let node_id_s2 = audio_graph.add_node(Box::new(sine_generator2));
-        let node_id_in = audio_graph.get_input_node_id();
-        let node_id_out = audio_graph.get_output_node_id();
 
         let result = audio_graph.add_edge(node_id_in, node_id_s1);
         if result.is_err() {
@@ -122,7 +128,7 @@ fn internal_init() -> Result<(), pa::Error> {
 
         // out_buffer を AudioGraph に渡す。
         let mut audio_buffer = AudioBuffer::new(num_output_channels as usize, frames, out_buffer);
-        audio_graph.process(&mut audio_buffer);
+        audio_graph.process(&mut audio_buffer, node_id_in, node_id_out);
 
         pa::Continue
     };
