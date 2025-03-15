@@ -20,7 +20,7 @@ impl FeedbackSineSubgraph {
         sine_generator.set_frequency(110.0);
         tap_in.set_max_delay_time_ms(100.0);
         tap_out.set_delay_time_ms(0.0);
-        gain.set_gain(0.3);
+        gain.set_gain(0.5);
 
         Self {
             sine_generator,
