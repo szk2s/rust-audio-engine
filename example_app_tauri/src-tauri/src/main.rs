@@ -2,6 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    audio_engine_service::service::init();
+    let _service = audio_engine_service::init();
     example_app_tauri_lib::run();
 }
