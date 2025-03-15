@@ -17,7 +17,6 @@ const INTERLEAVED: bool = true;
 /// AudioEngineService 構造体は、音声グラフと PortAudio のストリーム管理をまとめたものです。
 ///
 /// 利用者はこの構造体で音声エンジンの初期化やストリームの開始、音声処理の実行を行います。
-/// ※ audio_graph はコールバックにムーブするため、以降はアクセスできなくなります。
 pub struct AudioEngineService {
     /// 音声グラフ。オーディオコールバック内でのみ利用されます。
     audio_graph: Option<AudioGraph>,

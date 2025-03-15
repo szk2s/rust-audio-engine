@@ -28,12 +28,6 @@ fn test_two_sine_waves() {
         let node_id_s2 = audio_graph.add_node(Box::new(sine_generator2));
 
         // ノード間のエッジを追加して接続を行う
-        if let Err(result) = audio_graph.add_edge(node_id_in, node_id_s1) {
-            eprintln!("エッジの追加に失敗しました: {:?}", result);
-        }
-        if let Err(result) = audio_graph.add_edge(node_id_in, node_id_s2) {
-            eprintln!("エッジの追加に失敗しました: {:?}", result);
-        }
         if let Err(result) = audio_graph.add_edge(node_id_s1, node_id_out) {
             eprintln!("エッジの追加に失敗しました: {:?}", result);
         }
