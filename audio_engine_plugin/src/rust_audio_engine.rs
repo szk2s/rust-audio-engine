@@ -125,9 +125,6 @@ impl Plugin for RustAudioEngine {
         self.tmp_buffer
             .resize(self.num_channels * self.num_samples, 0.0);
 
-        self.audio_graph
-            .prepare(sample_rate, buffer_config.max_buffer_size as usize);
-
         // ノードを作成
         let mut sine_generator = SineGenerator::new();
         let mut gain_processor = GainProcessor::new();
@@ -159,12 +156,6 @@ impl Plugin for RustAudioEngine {
         // グラフにエッジを追加
         let _ = self
             .audio_graph
-            .add_edge(self.input_node_id, sine_generator_id);
-        let _ = self
-            .audio_graph
-            .add_edge(sine_generator_id, gain_processor_id);
-        let _ = self
-            .audio_graph
             .add_edge(sine_generator_id, gain_processor_id);
         let _ = self
             .audio_graph
@@ -172,6 +163,9 @@ impl Plugin for RustAudioEngine {
         let _ = self
             .audio_graph
             .add_edge(gain_processor_id, self.output_node_id);
+
+        self.audio_graph
+            .prepare(sample_rate, buffer_config.max_buffer_size as usize);
 
         true
     }

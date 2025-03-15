@@ -340,9 +340,16 @@ impl AudioGraph {
 
 #[cfg(test)]
 mod tests {
+    use assert_no_alloc::AllocDisabler;
+    use assert_no_alloc::assert_no_alloc;
+
     use crate::nodes::{InputNode, OutputNode};
 
     use super::*;
+
+    #[cfg(debug_assertions)] // required when disable_release is set (default)
+    #[global_allocator]
+    static A: AllocDisabler = AllocDisabler;
 
     // テスト用のダミーノード
     struct TestNode {
@@ -432,8 +439,11 @@ mod tests {
         // 2チャンネル、4サンプルのバッファを作成
         let mut buffer: Vec<f32> = vec![0.0; 8];
         let mut audio_buffer = AudioBuffer::new(2, 4, &mut buffer);
-        // グラフを処理
-        graph.process(&mut audio_buffer, input_node_id, output_node_id);
+
+        assert_no_alloc(|| {
+            // グラフを処理
+            graph.process(&mut audio_buffer, input_node_id, output_node_id);
+        });
 
         // トポロジカル順序で処理されるため、node1とnode2の両方が適用されるはず
         for sample in audio_buffer.as_slice() {
@@ -477,7 +487,9 @@ mod tests {
         let mut audio_buffer = AudioBuffer::new(2, 4, &mut buffer);
 
         // グラフを処理
-        graph.process(&mut audio_buffer, input_node_id, output_node_id);
+        assert_no_alloc(|| {
+            graph.process(&mut audio_buffer, input_node_id, output_node_id);
+        });
 
         // node1とnode2のが合流するので両方が適用されるはず
         for sample in audio_buffer.as_slice() {

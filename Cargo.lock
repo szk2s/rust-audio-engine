@@ -71,6 +71,12 @@ checksum = "170433209e817da6aae2c51aa0dd443009a613425dd041ebfb2492d1c4c11a25"
 [[package]]
 name = "assert_no_alloc"
 version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "55ca83137a482d61d916ceb1eba52a684f98004f18e0cafea230fe5579c178a3"
+
+[[package]]
+name = "assert_no_alloc"
+version = "1.1.2"
 source = "git+https://github.com/robbert-vdh/rust-assert-no-alloc.git?branch=feature%2Fnested-permit-forbid#a6fb4f62b9624715291e320ea5f0f70e73b035cf"
 dependencies = [
  "backtrace",
@@ -282,6 +288,9 @@ dependencies = [
 [[package]]
 name = "audio_engine_core"
 version = "0.1.0"
+dependencies = [
+ "assert_no_alloc 1.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
 
 [[package]]
 name = "audio_engine_plugin"
@@ -2304,7 +2313,7 @@ source = "git+https://github.com/robbert-vdh/nih-plug.git#18ec34e9166c4dbe91ced0
 dependencies = [
  "anyhow",
  "anymap3",
- "assert_no_alloc",
+ "assert_no_alloc 1.1.2 (git+https://github.com/robbert-vdh/rust-assert-no-alloc.git?branch=feature%2Fnested-permit-forbid)",
  "atomic_float",
  "atomic_refcell",
  "backtrace",
