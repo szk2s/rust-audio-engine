@@ -1,3 +1,4 @@
+mod feedback_sine_subgraph;
 mod gain_processor;
 mod impulse_generator;
 mod input_node;
@@ -6,6 +7,7 @@ mod saw_generator;
 mod sine_generator;
 mod tap;
 
+pub use feedback_sine_subgraph::FeedbackSineSubgraph;
 pub use gain_processor::GainProcessor;
 pub use impulse_generator::ImpulseGenerator;
 pub use input_node::InputNode;

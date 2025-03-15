@@ -7,3 +7,4 @@ edition = "2021"
 portaudio = "0.8.0"
 audio_engine_core = { path = "../audio_engine_core" }
 once_cell = "1.21.0"
+assert_no_alloc = "1.1.2"

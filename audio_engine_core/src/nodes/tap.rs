@@ -123,10 +123,9 @@ impl TapOut {
 impl AudioGraphNode for TapOut {
     /// メインスレッドから呼ばれる前提
     fn prepare(&mut self, _sample_rate: f32, _max_num_samples: usize) {
-        // ここでは何もしない
+        // 何もしない
     }
 
-    /// オーディオスレッドから呼ばれる
     fn process(&mut self, buffer: &mut AudioBuffer) {
         let num_frames = buffer.num_frames();
         let channels = buffer.num_channels();
@@ -134,23 +133,26 @@ impl AudioGraphNode for TapOut {
         // リングバッファを参照
         let buf = self.shared_buffer.lock().unwrap();
         if channels != buf.channels {
-            // TapIn時のチャンネル数と異なる場合はスキップする例
             return;
         }
 
-        // 遅延時間をサンプル数に変換（小数点以下の補間は省略）
-        let delay_samples = (self.delay_time_ms / 1000.0 * buf.sample_rate).round() as usize;
+        // 遅延時間をフレーム数に変換
+        let delay_frames = (self.delay_time_ms / 1000.0 * buf.sample_rate).round() as usize;
+        // ブロック分の遅れを補正（ブロックサイズ分引く）
+        let effective_delay_frames = if delay_frames > num_frames {
+            delay_frames - num_frames
+        } else {
+            0
+        };
 
-        // リングバッファの長さ
         let ring_len = buf.data.len();
-        // 現在の書き込み位置
         let write_pos = buf.write_pos;
 
-        // 読み取り開始位置（write_pos から delay_samples 分だけ前に戻る）
-        let start_read = if write_pos >= delay_samples * channels {
-            write_pos - delay_samples * channels
+        // 読み取り開始位置を補正後の遅延分で決定
+        let start_read = if write_pos >= effective_delay_frames * channels {
+            write_pos - effective_delay_frames * channels
         } else {
-            (ring_len + write_pos) - delay_samples * channels
+            (ring_len + write_pos) - effective_delay_frames * channels
         };
 
         // オーディオバッファへ読み出し
@@ -165,6 +167,77 @@ impl AudioGraphNode for TapOut {
     }
 
     fn reset(&mut self) {
-        // ここでは何もしない
+        // 何もしない
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tap_in_and_tap_out() {
+        // TapIn の生成と初期化
+        let mut tap_in = TapIn::new();
+        let sample_rate = 1000.0;
+        let block_size = 4; // 4フレーム分の処理
+        tap_in.prepare(sample_rate, block_size);
+
+        // 入力用データ作成（2チャンネル, 4フレーム, インターリーブ）
+        // フレーム毎に [L, R] として:
+        // フレーム0: [1.0, 2.0]
+        // フレーム1: [3.0, 4.0]
+        // フレーム2: [5.0, 6.0]
+        // フレーム3: [7.0, 8.0]
+        let mut input_data = vec![
+            1.0, 2.0, // frame0
+            3.0, 4.0, // frame1
+            5.0, 6.0, // frame2
+            7.0, 8.0, // frame3
+        ];
+        {
+            let mut input_buffer = AudioBuffer::new(2, block_size, input_data.as_mut_slice());
+            tap_in.process(&mut input_buffer);
+        }
+
+        // TapIn の process() でリングバッファに書き込んだ結果を検証
+        {
+            let buf = tap_in.shared_buffer.lock().unwrap();
+            // 4フレーム×2ch で合計8サンプルが書き込まれているはず
+            assert_eq!(buf.write_pos, 8);
+            let expected: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+            assert_eq!(buf.data[..8].to_vec(), expected);
+        }
+
+        // TapOut の生成（TapIn と同じリングバッファを利用）
+        let shared_buffer = tap_in.shared_buffer();
+        let mut tap_out = TapOut::new(shared_buffer);
+        // 遅延時間を 6.0ms に設定（サンプルレート1000Hzなら6フレーム分）
+        tap_out.set_delay_time_ms(6.0);
+
+        tap_out.prepare(sample_rate, block_size);
+
+        // 出力用バッファ作成（2チャンネル, 4フレーム分の領域）
+        let mut output_data = vec![0.0; 2 * block_size];
+        {
+            let mut output_buffer = AudioBuffer::new(2, block_size, output_data.as_mut_slice());
+            tap_out.process(&mut output_buffer);
+        }
+        // TapOut の処理について
+        // delay_frames = round(6.0/1000*1000) = 6 フレーム
+        // ブロックサイズ4フレーム分の補正により effective_delay_frames = 6 - 4 = 2 フレーム
+        // 書き込み位置 write_pos = 8 なので、読み出し開始位置は 8 - (2*2) = 4（チャンネル数分乗算）
+        // したがって、読み出しは以下のようになる:
+        //  frame0: インデックス4,5 → [5.0, 6.0]
+        //  frame1: インデックス6,7 → [7.0, 8.0]
+        //  frame2: インデックス8,9 → [0.0, 0.0]（未書き込み領域）
+        //  frame3: インデックス10,11 → [0.0, 0.0]
+        let expected_output: Vec<f32> = vec![
+            5.0, 6.0, // frame0
+            7.0, 8.0, // frame1
+            0.0, 0.0, // frame2
+            0.0, 0.0, // frame3
+        ];
+        assert_eq!(output_data, expected_output);
     }
 }

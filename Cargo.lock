@@ -304,6 +304,7 @@ dependencies = [
 name = "audio_engine_service"
 version = "0.1.0"
 dependencies = [
+ "assert_no_alloc 1.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "audio_engine_core",
  "once_cell",
  "portaudio",

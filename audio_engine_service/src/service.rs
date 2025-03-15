@@ -5,9 +5,14 @@
 
 extern crate portaudio;
 
+use assert_no_alloc::*;
 use audio_engine_core::audio_buffer::AudioBuffer;
 use audio_engine_core::audio_graph::AudioGraph;
 use portaudio as pa;
+
+#[cfg(debug_assertions)]
+#[global_allocator]
+static A: AllocDisabler = AllocDisabler;
 
 // 定数定義：サンプルレート、フレーム数、チャネル数の設定
 const SAMPLE_RATE: f64 = 44_100.0;
@@ -108,21 +113,33 @@ impl AudioEngineService {
                                  frames,
                                  ..
                              }| {
-            // フレーム数の確認
-            assert!(frames == FRAMES as usize);
-            // 出力バッファを0で初期化
-            out_buffer.fill(0.0);
-            // 入力信号を全ての出力チャネルにコピー
-            for frame in 0..frames {
-                for ch in 0..num_output_channels as usize {
-                    out_buffer[frame * num_output_channels as usize + ch] = in_buffer[frame];
+            assert_no_alloc(|| {
+                // フレーム数の確認
+                assert!(frames == FRAMES as usize);
+                // 出力バッファを0で初期化
+                out_buffer.fill(0.0);
+                // 入力信号を全ての出力チャネルにコピー
+                for frame in 0..frames {
+                    for ch in 0..num_output_channels as usize {
+                        out_buffer[frame * num_output_channels as usize + ch] = in_buffer[frame];
+                    }
                 }
-            }
-            // AudioBuffer に変換し、音声グラフで処理
-            let mut audio_buffer =
-                AudioBuffer::new(num_output_channels as usize, frames, out_buffer);
-            // move 済みの audio_graph で音声処理を実行
-            audio_graph.process(&mut audio_buffer, node_id_in, node_id_out);
+                // AudioBuffer に変換し、音声グラフで処理
+                let mut audio_buffer =
+                    AudioBuffer::new(num_output_channels as usize, frames, out_buffer);
+
+                // move 済みの audio_graph で音声処理を実行
+                audio_graph.process(&mut audio_buffer, node_id_in, node_id_out);
+
+                // オーディオグラフの処理後、出力バッファのサンプル値を -2.0 ～ +2.0 に制限（クリップ）する
+                for sample in out_buffer.iter_mut() {
+                    if *sample < -2.0 {
+                        *sample = -2.0;
+                    } else if *sample > 2.0 {
+                        *sample = 2.0;
+                    }
+                }
+            });
             pa::Continue
         };
 
