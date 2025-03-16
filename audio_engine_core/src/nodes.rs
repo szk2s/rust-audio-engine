@@ -6,6 +6,7 @@ mod output_node;
 mod saw_generator;
 mod sine_generator;
 mod tap;
+mod tap_test;
 
 pub use feedback_sine_subgraph::FeedbackSineSubgraph;
 pub use gain_processor::GainProcessor;

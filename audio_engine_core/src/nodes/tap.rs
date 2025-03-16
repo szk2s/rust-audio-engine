@@ -1,3 +1,6 @@
+//! ディレイを構築するためのノード、TapIn と TapOut を定義します。
+//! TapIn, TapOut はフィードバックディレイを作成可能になるように設計しています。
+
 // TODO: ロックフリーな実装に修正する
 use std::sync::{Arc, Mutex};
 
@@ -168,95 +171,5 @@ impl AudioGraphNode for TapOut {
 
     fn reset(&mut self) {
         // 何もしない
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_tap_in_and_tap_out() {
-        // TapIn の生成と初期化
-        let mut tap_in = TapIn::new();
-        let sample_rate = 1000.0;
-        let block_size = 4; // 4フレーム分の処理
-        tap_in.prepare(sample_rate, block_size);
-
-        // TapOut の生成（TapIn と同じリングバッファを利用）
-        let mut tap_out = TapOut::new(tap_in.shared_buffer());
-        // 遅延時間を 6.0ms に設定（サンプルレート1000Hzなら6フレーム分）
-        tap_out.set_delay_time_ms(6.0);
-        tap_out.prepare(sample_rate, block_size);
-
-        // 入力用バッファ作成（2チャンネル, 4フレーム, インターリーブ）
-        // 以下をループ再生する。
-        // フレーム毎に [L, R] として:
-        // フレーム0: [1.0, 2.0]
-        // フレーム1: [3.0, 4.0]
-        // フレーム2: [5.0, 6.0]
-        // フレーム3: [7.0, 8.0]
-        let mut input_data = vec![
-            1.0, 2.0, // frame0
-            3.0, 4.0, // frame1
-            5.0, 6.0, // frame2
-            7.0, 8.0, // frame3
-        ];
-
-        // 出力用バッファ作成（2チャンネル, 4フレーム分の領域）
-        let mut output_data = vec![0.0; 2 * block_size];
-
-        // トポロジカルソートで処理する想定のため、 TapOut が先に処理されるはず。今回のテストもその順序で処理する。
-
-        // 1回目の TapOut の process
-        {
-            let mut output_buffer = AudioBuffer::new(2, block_size, output_data.as_mut_slice());
-            tap_out.process(&mut output_buffer);
-            let expected_output: Vec<f32> = vec![
-                0.0, 0.0, // frame0
-                0.0, 0.0, // frame1
-                0.0, 0.0, // frame2
-                0.0, 0.0, // frame3
-            ];
-            assert_eq!(output_data, expected_output);
-        }
-
-        // 1回目の TapIn の process
-        {
-            let mut input_buffer = AudioBuffer::new(2, block_size, input_data.as_mut_slice());
-            tap_in.process(&mut input_buffer);
-        }
-
-        // 2回目の TapOut の process
-        {
-            let mut output_buffer = AudioBuffer::new(2, block_size, output_data.as_mut_slice());
-            tap_out.process(&mut output_buffer);
-            let expected_output: Vec<f32> = vec![
-                0.0, 0.0, // frame0
-                0.0, 0.0, // frame1
-                1.0, 2.0, // frame2
-                3.0, 4.0, // frame3
-            ];
-            assert_eq!(output_data, expected_output);
-        }
-
-        // 2回目の TapIn の process
-        {
-            let mut input_buffer = AudioBuffer::new(2, block_size, input_data.as_mut_slice());
-            tap_in.process(&mut input_buffer);
-        }
-
-        // 3回目の TapOut の process
-        {
-            let mut output_buffer = AudioBuffer::new(2, block_size, output_data.as_mut_slice());
-            tap_out.process(&mut output_buffer);
-            let expected_output: Vec<f32> = vec![
-                5.0, 6.0, // frame0
-                7.0, 8.0, // frame1
-                1.0, 2.0, // frame2
-                3.0, 4.0, // frame3
-            ];
-            assert_eq!(output_data, expected_output);
-        }
     }
 }
