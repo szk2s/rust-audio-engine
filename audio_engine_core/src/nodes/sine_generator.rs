@@ -2,7 +2,7 @@ use crate::{audio_buffer::AudioBuffer, audio_graph::AudioGraphNode};
 
 /// サイン波を生成するプロセッサー
 pub struct SineGenerator {
-    /// 周波数
+    /// 周波数。Hz 単位。
     frequency: f32,
     /// 現在の位相（0～1の範囲で保持）
     phase: f32,

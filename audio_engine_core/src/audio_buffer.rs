@@ -14,16 +14,16 @@ pub struct AudioBuffer<'a> {
 impl<'a> AudioBuffer<'a> {
     /// 新しい AudioBuffer を作成する
     /// これはヒープアロケーションを伴わないため、リアルタイムスレッドから呼び出せます。
-    pub fn new(channels: usize, samples: usize, buffer: &'a mut [f32]) -> Self {
+    pub fn new(channels: usize, frames: usize, buffer: &'a mut [f32]) -> Self {
         debug_assert_eq!(
             buffer.len(),
-            channels * samples,
+            channels * frames,
             "バッファの長さがチャンネル数とサンプル数の積と一致していません"
         );
         Self {
             buffer,
             channels,
-            frames: samples,
+            frames,
         }
     }
 

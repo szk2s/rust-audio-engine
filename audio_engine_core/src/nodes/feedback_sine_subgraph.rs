@@ -2,7 +2,8 @@ use crate::{audio_buffer::AudioBuffer, audio_graph::AudioGraphNode};
 
 use super::{GainProcessor, SineGenerator, TapIn, TapOut};
 
-/// 入力ノード - グラフの入力点を示すマーカーノード
+/// Sine 波のオシレーターの出力を自身の frequency にフィードバックするサブグラフ
+/// 1サンプル遅延でのフィードバックを行うため、サブグラフ内部は、バッファーサイズ=1 で処理される。
 pub struct FeedbackSineSubgraph {
     sine_generator: SineGenerator,
     tap_in: TapIn,
@@ -32,20 +33,24 @@ impl FeedbackSineSubgraph {
 }
 
 impl AudioGraphNode for FeedbackSineSubgraph {
-    fn prepare(&mut self, _sample_rate: f32, _max_num_samples: usize) {
-        self.tap_in.prepare(_sample_rate, _max_num_samples);
-        self.tap_out.prepare(_sample_rate, _max_num_samples);
-        self.sine_generator.prepare(_sample_rate, _max_num_samples);
-        self.gain.prepare(_sample_rate, _max_num_samples);
+    fn prepare(&mut self, sample_rate: f32, _max_num_samples: usize) {
+        self.tap_in.prepare(sample_rate, 1);
+        self.tap_out.prepare(sample_rate, 1);
+        self.sine_generator.prepare(sample_rate, 1);
+        self.gain.prepare(sample_rate, 1);
     }
 
-    fn process(&mut self, _buffer: &mut AudioBuffer) {
-        for i in 0.._buffer.num_frames() {
-            let mut internal_buffer =
-                AudioBuffer::new(2, 1, _buffer.as_mut_slice().get_mut(i..i + 2).unwrap());
+    fn process(&mut self, buffer: &mut AudioBuffer) {
+        let num_channels = buffer.num_channels();
+        for i in 0..buffer.num_frames() {
+            let mut internal_buffer = AudioBuffer::new(
+                num_channels,
+                1,
+                buffer.as_mut_slice().get_mut(i..i + num_channels).unwrap(),
+            );
             self.tap_out.process(&mut internal_buffer);
             let tap_out_value = internal_buffer.get_frame(0)[0];
-            // tap_out_value は -1 から 1 の範囲、これを 20 から 1000 の範囲に変換。
+            // tap_out_value は -1 から 1 の範囲、これを 20Hz から 1000Hz の範囲に変換。
             let freq = (tap_out_value + 1.0) * 490.0 + 20.0;
             self.sine_generator.set_frequency(freq);
             self.sine_generator.process(&mut internal_buffer);
