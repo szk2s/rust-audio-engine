@@ -1,40 +1,40 @@
 # Rust Audio Engine
 
-Rust で実装されたオーディオエンジン。DAW などのプロオーディオアプリケーションでの利用を想定。（WIP）
+An audio engine implemented in Rust, designed for use in professional audio applications such as DAWs. (WIP)
 
-## 各クレートの概要
+## Overview of Each Crate
 
-- **audio_engine_cdylib**: audio_engine_service を他言語から利用するための C API の定義。example_app_flutter を動かすのに必要。
-- **audio_engine_core**: Audio Graph などのコアのロジック・モデルの実装。
-- **audio_engine_plugin**: audio_engine_core と nih_plug の統合。CLAP プラグインをビルドできる。
-- **audio_engine_service**: audio_engine_core とオーディオデバイスを繋ぎ込み、音が鳴るようにしたサービス。スタンドアローンとして実行可能。
-- **example_app_flutter**: audio_engine_cdylib を Flutter に統合する例。
-- **example_app_tauri**: audio_engine_service を Tauri に統合する例。
+- **audio_engine_cdylib**: Defines the C API for using `audio_engine_service` from other languages. Required for running `example_app_flutter`.
+- **audio_engine_core**: Implements core logic and models such as the Audio Graph.
+- **audio_engine_plugin**: Integrates `audio_engine_core` with `nih_plug`, allowing CLAP plugins to be built.
+- **audio_engine_service**: Connects `audio_engine_core` with audio devices, making sound output possible. Can be run as a standalone service.
+- **example_app_flutter**: An example of integrating `audio_engine_cdylib` with Flutter.
+- **example_app_tauri**: An example of integrating `audio_engine_service` with Tauri.
 
 ## Prerequisites
 
-### portaudio のインストール
+### Installing portaudio
 
-このプロジェクトは audio_engine_service クレートが portaudio のライブラリに依存しています。
-（ただし、audio_engine_plugin は依存していないので、それだけ動かしたい方は、このセクションを skip して大丈夫です。）
-rust-portaudio クレートが自動で portaudio をビルド&インストールするはずなので、本来なら特に何もする必要はないはずです。
+This project depends on the `portaudio` library via the `audio_engine_service` crate.
+(However, `audio_engine_plugin` does not depend on it, so if you only need that, you can skip this section.)
+The `rust-portaudio` crate should automatically build and install `portaudio`, so no manual steps should be necessary.
 
-ただし、MacOS の場合、2025 年 3 月時点では、この自動ビルドが失敗するようです。
-対応策は二つ考えられます。
+However, as of March 2025, this automatic build seems to fail on macOS.
+There are two possible workarounds:
 
-1. homebrew で portaudio をインストールする。
+1. Install `portaudio` via Homebrew.
 
-こちらの方が簡単です。ただし universal binary ではありません。
+   This is the easier method, but it does not produce a universal binary.
 
-```shell
-brew install portaudio
-```
+   ```shell
+   brew install portaudio
+   ```
 
-2. portaudio をソースからビルドする。
+2. Build `portaudio` from source.
 
-[github](https://github.com/PortAudio/portaudio) の master ブランチではこの問題は修正されているようなので、これを clone してビルドすれば問題ありません。
-universal binary をビルドできます。
-ビルド後のライブラリを `/usr/local/lib` に配置すれば rust-portaudio が見つけてくれるようでした。
+   The issue appears to be fixed in the `master` branch on [GitHub](https://github.com/PortAudio/portaudio), so you can clone and build it manually.
+   This allows you to build a universal binary.
+   After building, place the library in `/usr/local/lib`, where `rust-portaudio` should be able to find it.
 
 ## Testing
 
@@ -42,88 +42,96 @@ universal binary をビルドできます。
 cargo test --workspace
 ```
 
-## audio_engine_plugin のビルドとインストール
+## Building and Installing `audio_engine_plugin`
 
-以下のコマンドで、audio_engine_plugin をビルドし、ユーザーの CLAP インストールディレクトリへコピーします。
+Run the following command to build `audio_engine_plugin` and copy it to the user's CLAP installation directory.
 
 ```shell
 ./build_and_install_plugin.sh
 ```
 
-## audio_engine_service の実行
+## Running `audio_engine_service`
 
-音が出ます。
+This will produce sound output.
 
 ```shell
 cargo run --package audio_engine_service
 ```
 
-## example_app_flutter の実行
+## Running `example_app_flutter`
 
-事前に audio_engine_cdylib がビルドされている必要があります。
-ビルドされていない場合は、以下のコマンドでビルドします。
+Before running, `audio_engine_cdylib` must be built.
+If it is not built yet, run the following command:
 
 ```shell
 cargo build --package audio_engine_cdylib
 ```
 
-ビルドが終わったら、main.dart を編集してパスを設定してください。
+After building, edit `main.dart` to set the correct library path.
 
 ```dart
-// プラットフォームに応じたライブラリパスを設定してください。
+// Set the library path according to the platform.
 const libPath =
-'../target/debug/libaudio_engine_cdylib.dylib'; // macOS の場合のライブラリファイル
+'../target/debug/libaudio_engine_cdylib.dylib'; // Library file for macOS
 ```
 
-その後、example_app_flutter を実行します。
+Then, run `example_app_flutter`.
 
 ```shell
 cd example_app_flutter
 flutter run
 ```
 
-例えば macOS のデバイスで動かしたい場合は、`flutter run -d macos` とします。
+For example, to run it on a macOS device, use:
 
-## example_app_tauri の実行
+```shell
+flutter run -d macos
+```
+
+## Running `example_app_tauri`
 
 ```shell
 cd example_app_tauri
 bun tauri dev
 ```
 
-## 未実装の機能
+## Unimplemented Features
 
-代表的な未実装機能のリストです。プロオーディオアプリケーションを構築するのに必要な機能は、他にもあると思います。
+Below is a list of major unimplemented features. Other functionalities necessary for building a professional audio application may also be needed.
 
-### プラグインホスト
+### Plugin Hosting
 
-CLAP をホストできるようにしたい。
-この辺りが参考になりそう。
+Support for hosting CLAP plugins.
+This repository might be useful as a reference:
 https://github.com/prokopyl/clack/tree/main/host/examples/cpal
 
-example_app_flutter の対応:
-現状 audio_engine_service::init を dart の ui スレッドから呼び出しているが、
-CLAP の GUI 表示をサポートするにはプラットフォームのメインスレッドから呼び出すように変更が必要そう。
+#### Consideration for `example_app_flutter`:
 
-### 再生中のグラフの編集
+Currently, `audio_engine_service::init` is called from Dart's UI thread, but to support CLAP GUI display, it may need to be called from the platform's main thread.
 
-リアルタイムスレッドで AudioGraph にアクセスしている最中でも、ノードやエッジの追加削除ができるようにしたい。
-ロックフリーに実装するには、[ArcSwap](https://docs.rs/arc-swap/latest/arc_swap/) などを利用して、グラフを swap する必要があるかも。
+### Editing the Playback Graph
 
-### イベントシーケンス
+Allow adding and removing nodes and edges in the `AudioGraph` even while accessing it from the real-time thread.
+For a lock-free implementation, it may be necessary to use something like [ArcSwap](https://docs.rs/arc-swap/latest/arc_swap/) to swap the graph.
 
-オーディオリージョンや MIDI クリップをタイムライン上に配置して再生する機能。
+### Event Sequencing
+
+Functionality to place audio regions and MIDI clips on a timeline for playback.
 
 ### MIDI IO
 
-この辺りを利用するのが良さそう。
+This library might be a good option:
 https://github.com/Boddlnagg/midir
 
-### iOS サポート
+### iOS Support
 
-iOS では portaudio を動かすのが難しいかもしれない（未確認）。
-その場合、AudioToolbox などを使って AudioIO と audio_engine_core を繋ぎこむ方針の方がいいのかも。
+Porting `portaudio` to iOS may be challenging (not yet confirmed).
+In that case, it may be better to use `AudioToolbox` or similar to connect `AudioIO` with `audio_engine_core`.
 
-### 複数のオーディオバス
+### Multiple Audio Buses
 
-サイドチェーンやインストルメントのマルチアウトをサポートしたい。
+Support for sidechain inputs and multi-output instruments.
+
+## Notice
+
+This is an auto-generated document. README_JA.md is the original version.
